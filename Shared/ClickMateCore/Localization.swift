@@ -1,0 +1,264 @@
+import Foundation
+
+enum L10n {
+    nonisolated(unsafe) static var languageProvider: () -> AppLanguage = { .system }
+
+    static func string(_ key: String) -> String {
+        let language = languageProvider()
+        if language != .system {
+            return dictionary(for: language)[key] ?? key
+        }
+
+        let resourceValue = NSLocalizedString(key, comment: "")
+        guard resourceValue == key else { return resourceValue }
+        return dictionary(for: .system)[key] ?? key
+    }
+
+    static func string(_ key: String, _ arguments: CVarArg...) -> String {
+        String(format: string(key), arguments: arguments)
+    }
+
+    static func string(_ key: String, fallback: String) -> String {
+        let value = string(key)
+        return value == key ? fallback : value
+    }
+
+    static var allKnownKeys: Set<String> {
+        Set(english.keys).union(simplifiedChinese.keys)
+    }
+
+    static func string(_ key: String, language: AppLanguage) -> String {
+        dictionary(for: language)[key] ?? key
+    }
+
+    private static func dictionary(for language: AppLanguage) -> [String: String] {
+        switch language {
+        case .english:
+            return english
+        case .simplifiedChinese:
+            return simplifiedChinese
+        case .system:
+            return Locale.preferredLanguages.first?.hasPrefix("zh") == true ? simplifiedChinese : english
+        }
+    }
+
+    private static let english: [String: String] = [
+        "app.name": "ClickMate",
+        "settings.title": "Settings",
+        "settings.language": "Language",
+        "language.system": "Follow System",
+        "language.english": "English",
+        "language.simplifiedChinese": "Simplified Chinese",
+        "tab.menus": "Menus",
+        "tab.layout": "Layout",
+        "tab.templates": "Templates",
+        "tab.apps": "Apps",
+        "tab.permissions": "Permissions",
+        "finder.toolbarTooltip": "ClickMate Finder actions",
+        "menus.title": "Finder Menu",
+        "menus.description": "Enable the commands that should appear under the ClickMate submenu in Finder.",
+        "layout.title": "Menu Layout",
+        "layout.description": "Choose which enabled menu groups stay under ClickMate and which appear directly in Finder.",
+        "layout.foldIntoApp": "Fold into ClickMate",
+        "layout.statusFolded": "Shown under the ClickMate submenu.",
+        "layout.statusTopLevel": "Shown directly in the Finder context menu.",
+        "button.enableAll": "Enable All",
+        "button.resetDefaults": "Reset Defaults",
+        "button.refresh": "Refresh",
+        "templates.title": "New File Templates",
+        "templates.description": "Templates are used by the Finder background menu and by selected folders.",
+        "templates.customExtension": "Custom extension",
+        "templates.addTemplate": "Add Template",
+        "apps.title": "Applications",
+        "apps.description": "ClickMate detects common terminals and editors. Finder actions use installed apps only.",
+        "apps.detected": "Detected",
+        "apps.notInstalled": "Not installed",
+        "apps.pinned": "Pinned Custom Apps",
+        "apps.pinApplication": "Pin Application...",
+        "permissions.title": "Permissions",
+        "permissions.description": "Enable the Finder extension, then grant Full Disk Access or add individual folders as a fallback.",
+        "permissions.openExtensions": "Open Login Items & Extensions",
+        "permissions.openFullDiskAccess": "Open Full Disk Access",
+        "permissions.fullDiskAccessGranted": "Full Disk Access is enabled.",
+        "permissions.fullDiskAccessMissing": "Full Disk Access is not detected.",
+        "permissions.fullDiskAccessDescription": "With Full Disk Access, ClickMate can create files from Finder without adding each folder first.",
+        "permissions.manualFoldersDescription": "Optional fallback when Full Disk Access is not enabled.",
+        "permissions.addFolder": "Add Folder...",
+        "permissions.removeFolder": "Remove",
+        "permissions.reloadExtension": "Reload Finder Extension",
+        "permissions.monitoredFolders": "Manual Folders",
+        "permissions.userDirectory": "User Directory",
+        "permissions.extensionStatusUnknown": "If the menu does not appear, enable the Finder extension and reload Finder.",
+        "permissions.wideCoverageDescription": "Wide coverage monitors only safe root folders such as Home and mounted volumes. ClickMate does not scan your files.",
+        "permissions.reloadRequested": "Refresh requested. Restart Finder if the menu still does not appear.",
+        "permissions.monitoringUpdated": "Monitored folders updated.",
+        "permissions.monitoringUpdatedWithSkipped": "Monitored folders updated. Skipped %d unsupported folder(s).",
+        "permissions.blockedFolder": "That system folder cannot be monitored by ClickMate.",
+        "permissions.bookmarkMissing": "Choose this folder again to refresh manual access.",
+        "permissions.footer": "Default Finder locations include Home, Desktop, Documents, Downloads, and mounted volumes. System roots are skipped.",
+        "menu.newFile": "New File",
+        "menu.newFileTemplates": "New File Templates",
+        "menu.copy": "Copy",
+        "menu.openHere": "Open Here",
+        "menu.openPinned": "Open with Pinned App",
+        "menu.hash": "Hash",
+        "menu.fileUtilities": "File Utilities",
+        "menu.advanced": "Advanced",
+        "menu.defaultAction": "Default: %@",
+        "command.newFile": "New File",
+        "command.copyPOSIXPath": "Copy POSIX Path",
+        "command.copyFileURL": "Copy File URL",
+        "command.copyShellPath": "Copy Shell-Escaped Path",
+        "command.copyFilename": "Copy Filename",
+        "command.copyBasename": "Copy Basename",
+        "command.copyExtension": "Copy Extension",
+        "command.copyParentPath": "Copy Parent Folder Path",
+        "command.openTerminal": "Open Terminal Here",
+        "command.openITerm": "Open iTerm2 Here",
+        "command.openVSCode": "Open in Visual Studio Code",
+        "command.openCursor": "Open in Cursor",
+        "command.openBBEdit": "Open in BBEdit",
+        "command.openSublime": "Open in Sublime Text",
+        "command.sha256": "Copy SHA-256",
+        "command.sha1": "Copy SHA-1",
+        "command.md5": "Copy MD5",
+        "command.revealParent": "Reveal Parent Folder",
+        "command.duplicateTimestamp": "Duplicate with Timestamp",
+        "command.createAlias": "Create Alias",
+        "command.moveToNewFolder": "Move to New Folder",
+        "command.compress": "Compress",
+        "command.metadata": "Copy Metadata Summary",
+        "command.imageDimensions": "Copy Image Dimensions",
+        "command.toggleHiddenFiles": "Toggle Hidden Files",
+        "template.txt": "Text File",
+        "template.md": "Markdown",
+        "template.json": "JSON",
+        "template.csv": "CSV",
+        "template.html": "HTML",
+        "template.css": "CSS",
+        "template.js": "JavaScript",
+        "template.swift": "Swift",
+        "template.py": "Python",
+        "notification.successTitle": "ClickMate",
+        "notification.failureTitle": "ClickMate Failed",
+        "notification.createdFile": "Created %@",
+        "notification.createFailed": "Could not create the file.",
+        "notification.permissionRequired": "Enable Full Disk Access for ClickMate or add this folder in Permissions before creating files here.",
+        "notification.copied": "Copied to clipboard.",
+        "notification.opened": "Opened.",
+        "notification.completed": "Completed.",
+        "notification.noSelection": "No Finder item is selected.",
+        "notification.openFailed": "Could not open the target.",
+        "notification.actionFailed": "The action could not be completed."
+    ]
+
+    private static let simplifiedChinese: [String: String] = [
+        "app.name": "右键大师",
+        "settings.title": "设置",
+        "settings.language": "语言",
+        "language.system": "跟随系统",
+        "language.english": "English",
+        "language.simplifiedChinese": "简体中文",
+        "tab.menus": "菜单",
+        "tab.layout": "布局",
+        "tab.templates": "模板",
+        "tab.apps": "应用",
+        "tab.permissions": "权限",
+        "finder.toolbarTooltip": "右键大师访达操作",
+        "menus.title": "访达菜单",
+        "menus.description": "选择要显示在访达右键大师右键菜单中的命令。",
+        "layout.title": "菜单布局",
+        "layout.description": "选择已启用菜单组显示在右键大师二级菜单下，还是直接显示在访达右键一级菜单。",
+        "layout.foldIntoApp": "折叠到右键大师",
+        "layout.statusFolded": "显示在右键大师二级菜单下。",
+        "layout.statusTopLevel": "直接显示在访达右键一级菜单。",
+        "button.enableAll": "全部启用",
+        "button.resetDefaults": "恢复默认",
+        "button.refresh": "刷新",
+        "templates.title": "新建文件模板",
+        "templates.description": "这些模板会用于访达空白处和文件夹右键菜单。",
+        "templates.customExtension": "自定义扩展名",
+        "templates.addTemplate": "添加模板",
+        "apps.title": "应用",
+        "apps.description": "右键大师会检测常用终端和编辑器，访达动作只会调用已安装的应用。",
+        "apps.detected": "已检测",
+        "apps.notInstalled": "未安装",
+        "apps.pinned": "固定的自定义应用",
+        "apps.pinApplication": "固定应用...",
+        "permissions.title": "权限",
+        "permissions.description": "请启用访达扩展，然后授予完全磁盘访问权限；也可以手动添加部分文件夹作为备用授权。",
+        "permissions.openExtensions": "打开登录项与扩展",
+        "permissions.openFullDiskAccess": "打开完全磁盘访问",
+        "permissions.fullDiskAccessGranted": "已启用完全磁盘访问。",
+        "permissions.fullDiskAccessMissing": "未检测到完全磁盘访问。",
+        "permissions.fullDiskAccessDescription": "开启完全磁盘访问后，右键大师无需逐个添加文件夹即可从访达创建文件。",
+        "permissions.manualFoldersDescription": "未开启完全磁盘访问时，可手动添加部分文件夹作为备用授权。",
+        "permissions.addFolder": "添加文件夹...",
+        "permissions.removeFolder": "移除",
+        "permissions.reloadExtension": "重新加载访达扩展",
+        "permissions.monitoredFolders": "手动文件夹",
+        "permissions.userDirectory": "用户目录",
+        "permissions.extensionStatusUnknown": "如果右键菜单没有出现，请启用访达扩展并重新加载访达。",
+        "permissions.wideCoverageDescription": "宽覆盖只监控用户目录和已挂载磁盘等安全根目录。右键大师不会扫描你的文件。",
+        "permissions.reloadRequested": "已请求刷新。如果菜单仍未出现，请重启访达。",
+        "permissions.monitoringUpdated": "监控文件夹已更新。",
+        "permissions.monitoringUpdatedWithSkipped": "监控文件夹已更新，已跳过 %d 个不支持的文件夹。",
+        "permissions.blockedFolder": "右键大师不能监控该系统文件夹。",
+        "permissions.bookmarkMissing": "请重新选择此文件夹以刷新手动授权。",
+        "permissions.footer": "默认访达位置包括用户目录、桌面、文稿、下载和已挂载磁盘。系统根目录会被跳过。",
+        "menu.newFile": "新建文件",
+        "menu.newFileTemplates": "新建文件模板",
+        "menu.copy": "复制",
+        "menu.openHere": "在此处打开",
+        "menu.openPinned": "用固定应用打开",
+        "menu.hash": "哈希",
+        "menu.fileUtilities": "文件工具",
+        "menu.advanced": "高级",
+        "menu.defaultAction": "默认：%@",
+        "command.newFile": "新建文件",
+        "command.copyPOSIXPath": "复制 POSIX 路径",
+        "command.copyFileURL": "复制文件 URL",
+        "command.copyShellPath": "复制 Shell 转义路径",
+        "command.copyFilename": "复制文件名",
+        "command.copyBasename": "复制主文件名",
+        "command.copyExtension": "复制扩展名",
+        "command.copyParentPath": "复制父文件夹路径",
+        "command.openTerminal": "在此处打开终端",
+        "command.openITerm": "在此处打开 iTerm2",
+        "command.openVSCode": "用 Visual Studio Code 打开",
+        "command.openCursor": "用 Cursor 打开",
+        "command.openBBEdit": "用 BBEdit 打开",
+        "command.openSublime": "用 Sublime Text 打开",
+        "command.sha256": "复制 SHA-256",
+        "command.sha1": "复制 SHA-1",
+        "command.md5": "复制 MD5",
+        "command.revealParent": "显示父文件夹",
+        "command.duplicateTimestamp": "带时间戳复制",
+        "command.createAlias": "制作替身",
+        "command.moveToNewFolder": "移到新文件夹",
+        "command.compress": "压缩",
+        "command.metadata": "复制元数据摘要",
+        "command.imageDimensions": "复制图片尺寸",
+        "command.toggleHiddenFiles": "切换隐藏文件显示",
+        "template.txt": "文本文件",
+        "template.md": "Markdown",
+        "template.json": "JSON",
+        "template.csv": "CSV",
+        "template.html": "HTML",
+        "template.css": "CSS",
+        "template.js": "JavaScript",
+        "template.swift": "Swift",
+        "template.py": "Python",
+        "notification.successTitle": "右键大师",
+        "notification.failureTitle": "右键大师失败",
+        "notification.createdFile": "已创建 %@",
+        "notification.createFailed": "无法创建文件。",
+        "notification.permissionRequired": "请为右键大师开启完全磁盘访问，或在权限中添加此文件夹后再创建文件。",
+        "notification.copied": "已复制到剪贴板。",
+        "notification.opened": "已打开。",
+        "notification.completed": "已完成。",
+        "notification.noSelection": "没有选择访达项目。",
+        "notification.openFailed": "无法打开目标。",
+        "notification.actionFailed": "无法完成此操作。"
+    ]
+}
