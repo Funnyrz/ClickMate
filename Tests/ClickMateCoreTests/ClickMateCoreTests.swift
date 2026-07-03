@@ -190,6 +190,32 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(L10n.string("tab.permissions", language: .simplifiedChinese), "权限")
         XCTAssertEqual(L10n.string("app.name", language: .english), "ClickMate")
         XCTAssertEqual(L10n.string("app.name", language: .simplifiedChinese), "右键大师")
+        XCTAssertEqual(L10n.string("app.versionWithBuild", language: .english), "Version %@ (%@)")
+        XCTAssertEqual(L10n.string("app.versionWithBuild", language: .simplifiedChinese), "版本 %@ (%@)")
+    }
+
+    func testAppVersionDisplayUsesBundleVersionMetadata() throws {
+        L10n.languageProvider = { .english }
+        addTeardownBlock {
+            L10n.languageProvider = { .system }
+        }
+
+        XCTAssertEqual(
+            AppVersion.displayString(bundle: try makeBundle(shortVersion: "1.2.3", build: "45")),
+            "Version 1.2.3 (45)"
+        )
+        XCTAssertEqual(
+            AppVersion.displayString(bundle: try makeBundle(shortVersion: "1.2.3", build: "1.2.3")),
+            "Version 1.2.3"
+        )
+        XCTAssertEqual(
+            AppVersion.displayString(bundle: try makeBundle(shortVersion: nil, build: "45")),
+            "Build 45"
+        )
+        XCTAssertEqual(
+            AppVersion.displayString(bundle: try makeBundle(shortVersion: nil, build: nil)),
+            ""
+        )
     }
 
     func testBundleIdentifiersUseZxacnNamespace() {
@@ -876,5 +902,27 @@ final class ClickMateCoreTests: XCTestCase {
             try? FileManager.default.removeItem(at: url)
         }
         return url
+    }
+
+    private func makeBundle(shortVersion: String?, build: String?) throws -> Bundle {
+        let bundleURL = try makeTemporaryDirectory().appendingPathComponent("Test.bundle", isDirectory: true)
+        let contentsURL = bundleURL.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+
+        var info: [String: Any] = [
+            "CFBundleIdentifier": "com.zxacn.clickmate.tests",
+            "CFBundlePackageType": "BNDL"
+        ]
+        if let shortVersion {
+            info["CFBundleShortVersionString"] = shortVersion
+        }
+        if let build {
+            info["CFBundleVersion"] = build
+        }
+
+        let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try data.write(to: contentsURL.appendingPathComponent("Info.plist"))
+
+        return try XCTUnwrap(Bundle(url: bundleURL))
     }
 }

@@ -44,6 +44,9 @@ enum L10n {
 
     private static let english: [String: String] = [
         "app.name": "ClickMate",
+        "app.version": "Version %@",
+        "app.versionWithBuild": "Version %@ (%@)",
+        "app.build": "Build %@",
         "settings.title": "Settings",
         "settings.language": "Language",
         "language.system": "Follow System",
@@ -170,6 +173,9 @@ enum L10n {
 
     private static let simplifiedChinese: [String: String] = [
         "app.name": "右键大师",
+        "app.version": "版本 %@",
+        "app.versionWithBuild": "版本 %@ (%@)",
+        "app.build": "构建 %@",
         "settings.title": "设置",
         "settings.language": "语言",
         "language.system": "跟随系统",
