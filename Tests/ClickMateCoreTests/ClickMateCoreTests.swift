@@ -109,6 +109,35 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(MenuCommandGroup.openHere.commands, [.openTerminal, .openITerm, .openVSCode, .openCursor, .openBBEdit, .openSublime])
     }
 
+    func testMenuCommandGroupsExposeIconSymbols() {
+        for group in MenuCommandGroup.allCases {
+            XCTAssertFalse(group.symbolName.isEmpty, group.rawValue)
+        }
+    }
+
+    func testMenuCommandsExposeIconSymbols() {
+        for command in MenuCommand.allCases {
+            XCTAssertFalse(command.symbolName.isEmpty, command.rawValue)
+        }
+    }
+
+    func testOpenApplicationCommandsExposeStableBundleIdentifiers() {
+        let expected: [MenuCommand: String] = [
+            .openTerminal: "com.apple.Terminal",
+            .openITerm: "com.googlecode.iterm2",
+            .openVSCode: "com.microsoft.VSCode",
+            .openCursor: "com.todesktop.230313mzl4w4u92",
+            .openBBEdit: "com.barebones.bbedit",
+            .openSublime: "com.sublimetext.4"
+        ]
+
+        XCTAssertEqual(Set(expected.values), Set(AppDetector.defaultApplicationOrder))
+        for (command, bundleIdentifier) in expected {
+            XCTAssertEqual(command.applicationBundleIdentifier, bundleIdentifier)
+            XCTAssertEqual(MenuCommand.openApplicationCommand(forBundleIdentifier: bundleIdentifier), command)
+        }
+    }
+
     func testLocalizationKeysExistForCommandsAndTemplates() {
         for command in MenuCommand.allCases {
             XCTAssertTrue(L10n.allKnownKeys.contains(command.titleKey), command.titleKey)
@@ -132,7 +161,23 @@ final class ClickMateCoreTests: XCTestCase {
             "permissions.fullDiskAccessGranted",
             "permissions.fullDiskAccessMissing",
             "permissions.fullDiskAccessDescription",
+            "permissions.fullDiskAccessManualAdd",
+            "permissions.completeGuide",
+            "permissions.stepInstallTitle",
+            "permissions.stepInstallDescription",
+            "permissions.installedInApplications",
+            "permissions.notInApplications",
+            "permissions.stepExtensionTitle",
+            "permissions.stepExtensionDescription",
+            "permissions.extensionEnabled",
+            "permissions.extensionDisabled",
+            "permissions.extensionNotRegistered",
+            "permissions.extensionUnknown",
+            "permissions.extensionEnabledHint",
+            "permissions.stepDiskAccessTitle",
+            "permissions.stepManualFoldersTitle",
             "permissions.manualFoldersDescription",
+            "permissions.manualFoldersStatus",
             "permissions.removeFolder",
             "notification.permissionRequired"
         ] {
@@ -149,8 +194,8 @@ final class ClickMateCoreTests: XCTestCase {
 
     func testBundleIdentifiersUseZxacnNamespace() {
         XCTAssertEqual(AppConstants.appGroupIdentifier, "group.com.zxacn")
-        XCTAssertEqual(AppConstants.bundleIdentifier, "com.zxacn")
-        XCTAssertEqual(AppConstants.finderExtensionBundleIdentifier, "com.zxacn.FinderExtension")
+        XCTAssertEqual(AppConstants.bundleIdentifier, "com.zxacn.clickmate")
+        XCTAssertEqual(AppConstants.finderExtensionBundleIdentifier, "com.zxacn.clickmate.FinderExtension")
     }
 
     func testLocalizationProviderOverridesBundleLanguage() {
@@ -440,6 +485,18 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(reloaded.preferences.pinnedApplicationPaths, ["/Applications/Zed.app", "/Applications/Test.app"])
     }
 
+    func testPreferencesJSONRoundTripPreservesPermissionGuideDismissal() throws {
+        let fileURL = try makeTemporaryDirectory().appendingPathComponent("ClickMatePreferences.json")
+        let store = PreferencesStore(fileURL: fileURL)
+
+        store.preferences.hasDismissedPermissionGuide = true
+        store.waitForPendingSaves()
+
+        let reloaded = PreferencesStore(fileURL: fileURL)
+
+        XCTAssertTrue(reloaded.preferences.hasDismissedPermissionGuide)
+    }
+
     func testPreferencesJSONRoundTripPreservesLanguage() throws {
         let fileURL = try makeTemporaryDirectory().appendingPathComponent("ClickMatePreferences.json")
         let store = PreferencesStore(fileURL: fileURL)
@@ -465,11 +522,71 @@ final class ClickMateCoreTests: XCTestCase {
         let preferences = try JSONDecoder().decode(ClickMatePreferences.self, from: Data(json.utf8))
 
         XCTAssertEqual(preferences.language, .system)
+        XCTAssertFalse(preferences.hasDismissedPermissionGuide)
         XCTAssertEqual(preferences.monitoredFolderBookmarks, [:])
         XCTAssertEqual(preferences.monitoredFolderPaths, ["/Users/example"])
         XCTAssertEqual(preferences.menuCommandOrder, MenuCommand.allCases)
-        XCTAssertEqual(preferences.foldedMenuGroups, MenuCommandGroup.defaultFoldedGroups)
+        XCTAssertTrue(preferences.foldedMenuGroups.isEmpty)
         XCTAssertEqual(preferences.detectedApplicationOrder, AppDetector.defaultApplicationOrder)
+    }
+
+    func testMenuLayoutDefaultsToTopLevelGroups() throws {
+        let preferences = ClickMatePreferences(
+            enabledCommands: [.newFile, .copyPOSIXPath, .sha256],
+            templates: FileTemplate.defaults,
+            monitoredFolderPaths: [],
+            pinnedApplicationPaths: []
+        )
+
+        XCTAssertTrue(preferences.foldedMenuGroups.isEmpty)
+        XCTAssertEqual(preferences.menuGroupPlacement.topLevelGroups, [.newFile, .copy, .hash])
+        XCTAssertEqual(preferences.menuGroupPlacement.foldedGroups, [])
+    }
+
+    func testLegacyAllFoldedMenuLayoutMigratesToTopLevelDefault() throws {
+        let fileURL = try makeTemporaryDirectory().appendingPathComponent("ClickMatePreferences.json")
+        let allGroups = MenuCommandGroup.allCases.map { "\"\($0.rawValue)\"" }.joined(separator: ", ")
+        let json = """
+        {
+          "enabledCommands": ["newFile", "copyPOSIXPath", "sha256"],
+          "foldedMenuGroups": [\(allGroups)],
+          "templates": [],
+          "monitoringMode": "wideCoverage",
+          "monitoredFolderPaths": [],
+          "pinnedApplicationPaths": []
+        }
+        """
+        try Data(json.utf8).write(to: fileURL)
+
+        let store = PreferencesStore(fileURL: fileURL)
+        store.waitForPendingSaves()
+
+        XCTAssertTrue(store.preferences.foldedMenuGroups.isEmpty)
+        XCTAssertEqual(store.preferences.menuLayoutDefaultsVersion, ClickMatePreferences.currentMenuLayoutDefaultsVersion)
+
+        let reloaded = PreferencesStore(fileURL: fileURL)
+        XCTAssertTrue(reloaded.preferences.foldedMenuGroups.isEmpty)
+        XCTAssertEqual(reloaded.preferences.menuLayoutDefaultsVersion, ClickMatePreferences.currentMenuLayoutDefaultsVersion)
+    }
+
+    func testLegacyCustomFoldedMenuLayoutIsPreservedDuringMigration() throws {
+        let fileURL = try makeTemporaryDirectory().appendingPathComponent("ClickMatePreferences.json")
+        let json = """
+        {
+          "enabledCommands": ["newFile", "copyPOSIXPath", "sha256"],
+          "foldedMenuGroups": ["hash"],
+          "templates": [],
+          "monitoringMode": "wideCoverage",
+          "monitoredFolderPaths": [],
+          "pinnedApplicationPaths": []
+        }
+        """
+        try Data(json.utf8).write(to: fileURL)
+
+        let store = PreferencesStore(fileURL: fileURL)
+
+        XCTAssertEqual(store.preferences.foldedMenuGroups, [.hash])
+        XCTAssertEqual(store.preferences.menuLayoutDefaultsVersion, ClickMatePreferences.currentMenuLayoutDefaultsVersion)
     }
 
     func testMenuLayoutPlacementSplitsTopLevelAndFoldedGroups() throws {
@@ -487,7 +604,7 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(preferences.menuGroupPlacement.foldedGroups, [.hash])
     }
 
-    func testMenuLayoutOnlyShowsEnabledGroupsAndPinnedAppsWhenPresent() throws {
+    func testMenuLayoutOnlyShowsEnabledCommandGroups() throws {
         let withoutPinned = ClickMatePreferences(
             enabledCommands: [.copyPOSIXPath],
             templates: [],
@@ -502,7 +619,9 @@ final class ClickMateCoreTests: XCTestCase {
         )
 
         XCTAssertEqual(withoutPinned.orderedVisibleMenuGroups, [.copy])
-        XCTAssertEqual(withPinned.orderedVisibleMenuGroups, [.copy, .openPinned])
+        XCTAssertEqual(withPinned.orderedVisibleMenuGroups, [.copy])
+        XCTAssertFalse(withPinned.menuGroupPlacement.foldedGroups.contains(.openPinned))
+        XCTAssertFalse(withPinned.menuGroupPlacement.topLevelGroups.contains(.openPinned))
     }
 
     func testPreferencesNormalizesMenuCommandOrder() throws {
@@ -546,6 +665,50 @@ final class ClickMateCoreTests: XCTestCase {
         let preferences = try JSONDecoder().decode(ClickMatePreferences.self, from: Data(json.utf8))
 
         XCTAssertEqual(preferences.monitoredFolderPaths, [])
+    }
+
+    func testFinderExtensionStatusParsesPlugInKitOutput() {
+        XCTAssertEqual(
+            FinderExtensionPolicy.status(fromPlugInKitOutput: "+    com.zxacn.clickmate.FinderExtension(1) /Applications/ClickMate.app"),
+            .enabled
+        )
+        XCTAssertEqual(
+            FinderExtensionPolicy.status(fromPlugInKitOutput: "-    com.zxacn.clickmate.FinderExtension(1) /Applications/ClickMate.app"),
+            .disabled
+        )
+        XCTAssertEqual(
+            FinderExtensionPolicy.status(fromPlugInKitOutput: "\n"),
+            .notRegistered
+        )
+        XCTAssertEqual(
+            FinderExtensionPolicy.status(fromPlugInKitOutput: "?    com.zxacn.clickmate.FinderExtension(1) /Applications/ClickMate.app"),
+            .unknown
+        )
+    }
+
+    func testFinderExtensionReloadRegistersAndEnablesBundledExtension() async throws {
+        let appURL = try makeTemporaryDirectory().appendingPathComponent("ClickMate.app", isDirectory: true)
+        let extensionURL = appURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("PlugIns", isDirectory: true)
+            .appendingPathComponent("ClickMateFinderExtension.appex", isDirectory: true)
+        try FileManager.default.createDirectory(at: extensionURL, withIntermediateDirectories: true)
+
+        var invocations: [[String]] = []
+        let status = await FinderExtensionPolicy.reloadBundledExtension(appBundleURL: appURL) { _, arguments in
+            invocations.append(arguments)
+            if arguments.first == "-m" {
+                return (0, "+    com.zxacn.clickmate.FinderExtension(1) /Applications/ClickMate.app")
+            }
+            return (0, "")
+        }
+
+        XCTAssertEqual(status, .enabled)
+        XCTAssertEqual(invocations, [
+            ["-a", extensionURL.path],
+            ["-e", "use", "-p", "com.apple.FinderSync", "-i", "com.zxacn.clickmate.FinderExtension"],
+            ["-m", "-p", "com.apple.FinderSync", "-i", "com.zxacn.clickmate.FinderExtension"]
+        ])
     }
 
     func testPendingCopyHashCommandRoundTrips() throws {

@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode user state
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+*.xcuserdatad/
+
+# Xcode build products and archives
+build/
+DerivedData/
+*.xcarchive
+*.xcresult
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Dependency managers
+Pods/
+Carthage/Build/
+
+# Local packaging output
+*.dmg
+
+# Editor and local agent state
+.vscode/
+.omx/

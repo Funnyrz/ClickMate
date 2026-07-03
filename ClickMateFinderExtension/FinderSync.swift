@@ -8,6 +8,8 @@ class FinderSync: FIFinderSync {
     private var latestMenuContext: FinderContext?
     private var menuActionTokens: [Int: FinderCommandToken] = [:]
     private var menuActionTitleTokens: [String: FinderCommandToken] = [:]
+    private var menuImageCache: [String: NSImage] = [:]
+    private var pendingApplicationIconCacheKeys: Set<String> = []
     private var nextMenuActionTag = 1
 
     override init() {
@@ -17,6 +19,7 @@ class FinderSync: FIFinderSync {
         }
         setBootstrapMonitoredDirectories()
         refreshMonitoredDirectoriesFromPreferences()
+        preloadApplicationIcons()
         observePreferenceChanges()
     }
 
@@ -38,7 +41,7 @@ class FinderSync: FIFinderSync {
     }
 
     override var toolbarItemImage: NSImage {
-        NSImage(named: NSImage.actionTemplateName) ?? NSImage()
+        menuSymbolImage("cursorarrow.click") ?? NSImage(named: NSImage.actionTemplateName) ?? NSImage()
     }
 
     override func beginObservingDirectory(at url: URL) {
@@ -52,6 +55,12 @@ class FinderSync: FIFinderSync {
     }
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
+        let start = CFAbsoluteTimeGetCurrent()
+        defer {
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1_000
+            logger.debug("Built Finder menu in \(elapsed, privacy: .public) ms")
+        }
+
         let selectedURLs = FIFinderSyncController.default().selectedItemURLs() ?? []
         let targetedURL = FIFinderSyncController.default().targetedURL()
         let context = FinderContext(selectedURLs: selectedURLs, targetedURL: targetedURL)
@@ -68,7 +77,7 @@ class FinderSync: FIFinderSync {
 
     private func updateMonitoredDirectories() {
         store.reload()
-        applyMonitoredDirectoryURLs(monitoredDirectoryURLs())
+        refreshMonitoredDirectoriesFromPreferences()
     }
 
     private func setBootstrapMonitoredDirectories() {
@@ -77,7 +86,7 @@ class FinderSync: FIFinderSync {
     }
 
     private func refreshMonitoredDirectoriesFromPreferences() {
-        updateMonitoredDirectories()
+        applyMonitoredDirectoryURLs(monitoredDirectoryURLs())
     }
 
     private func applyMonitoredDirectoryURLs(_ urls: Set<URL>) {
@@ -123,7 +132,8 @@ class FinderSync: FIFinderSync {
             title: defaultActionTitle(defaultTemplate.localizedDisplayName),
             token: .template(defaultTemplate.id),
             context: context,
-            isEnabled: true
+            isEnabled: true,
+            image: templateIcon()
         ))
         submenu.addItem(.separator())
 
@@ -132,10 +142,11 @@ class FinderSync: FIFinderSync {
                 title: template.localizedDisplayName,
                 token: .template(template.id),
                 context: context,
-                isEnabled: true
+                isEnabled: true,
+                image: templateIcon()
             ))
         }
-        addSubmenu(title: L10n.string("menu.newFile"), submenu: submenu, to: menu)
+        addSubmenu(title: L10n.string("menu.newFile"), submenu: submenu, to: menu, image: groupIcon(.newFile))
     }
 
     private func appendCopyMenu(to menu: NSMenu, context: FinderContext) {
@@ -152,19 +163,8 @@ class FinderSync: FIFinderSync {
     }
 
     private func appendPinnedMenu(to menu: NSMenu, context: FinderContext) {
-        if !store.preferences.pinnedApplicationPaths.isEmpty {
-            let submenu = NSMenu(title: L10n.string("menu.openPinned"))
-
-            let appPaths = store.preferences.pinnedApplicationPaths
-            if let defaultPath = appPaths.first {
-                submenu.addItem(pinnedApplicationItem(path: defaultPath, context: context, usesDefaultTitle: true))
-                submenu.addItem(.separator())
-            }
-
-            for path in appPaths {
-                submenu.addItem(pinnedApplicationItem(path: path, context: context))
-            }
-            addSubmenu(title: L10n.string("menu.openPinned"), submenu: submenu, to: menu)
+        for path in store.preferences.pinnedApplicationPaths {
+            menu.addItem(pinnedApplicationItem(path: path, context: context))
         }
     }
 
@@ -206,12 +206,15 @@ class FinderSync: FIFinderSync {
                 appendMenuGroup(group, to: menu, context: context)
             }
         }
+
+        appendPinnedMenu(to: menu, context: context)
     }
 
     private func addClickMateSubmenu(groups: [MenuCommandGroup], to menu: NSMenu, context: FinderContext) {
         guard !groups.isEmpty else { return }
         let appName = L10n.string("app.name")
         let item = NSMenuItem(title: appName, action: nil, keyEquivalent: "")
+        item.image = appIcon()
         let submenu = NSMenu(title: appName)
         appendMenuGroups(groups, to: submenu, context: context)
         item.submenu = submenu
@@ -270,7 +273,7 @@ class FinderSync: FIFinderSync {
         for command in visibleCommands {
             submenu.addItem(commandItem(command, context: context))
         }
-        addSubmenu(title: title, submenu: submenu, to: menu)
+        addSubmenu(title: title, submenu: submenu, to: menu, image: groupIcon(group))
     }
 
     private func orderedEnabledCommands(from commands: [MenuCommand]) -> [MenuCommand] {
@@ -278,8 +281,9 @@ class FinderSync: FIFinderSync {
         return store.preferences.enabledMenuCommandsInCustomOrder.filter { commandSet.contains($0) }
     }
 
-    private func addSubmenu(title: String, submenu: NSMenu, to menu: NSMenu) {
+    private func addSubmenu(title: String, submenu: NSMenu, to menu: NSMenu, image: NSImage? = nil) {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.image = image
         item.submenu = submenu
         menu.addItem(item)
     }
@@ -289,7 +293,8 @@ class FinderSync: FIFinderSync {
             title: usesDefaultTitle ? defaultActionTitle(command.title) : command.title,
             token: .command(command),
             context: context,
-            isEnabled: isCommandEnabled(command, context: context)
+            isEnabled: isCommandEnabled(command, context: context),
+            image: commandIcon(command)
         )
     }
 
@@ -299,20 +304,149 @@ class FinderSync: FIFinderSync {
             title: usesDefaultTitle ? defaultActionTitle(title) : title,
             token: .pinnedApplication(path),
             context: context,
-            isEnabled: !context.actionURLs.isEmpty
+            isEnabled: !context.actionURLs.isEmpty,
+            image: applicationIcon(atPath: path) ?? groupIcon(.openPinned)
         )
     }
 
-    private func actionItem(title: String, token: FinderCommandToken, context: FinderContext, isEnabled: Bool) -> NSMenuItem {
+    private func actionItem(title: String, token: FinderCommandToken, context: FinderContext, isEnabled: Bool, image: NSImage? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(handleMenuAction(_:)), keyEquivalent: "")
         item.target = self
         item.isEnabled = isEnabled
+        item.image = image
         item.representedObject = token.rawValue
         item.tag = nextMenuActionTag
         menuActionTokens[item.tag] = token
         menuActionTitleTokens[title] = token
         nextMenuActionTag += 1
         return item
+    }
+
+    private func appIcon() -> NSImage? {
+        let bundleIcon = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String
+        if let bundleIcon, let icon = NSImage(named: bundleIcon) {
+            return resizedMenuIcon(icon)
+        }
+        return menuSymbolImage("cursorarrow.click")
+    }
+
+    private func groupIcon(_ group: MenuCommandGroup) -> NSImage? {
+        menuSymbolImage(group.symbolName)
+    }
+
+    private func commandIcon(_ command: MenuCommand) -> NSImage? {
+        if let bundleIdentifier = command.applicationBundleIdentifier {
+            return cachedApplicationIcon(
+                bundleIdentifier: bundleIdentifier,
+                fallbackSymbolName: command.symbolName
+            )
+        }
+        return menuSymbolImage(command.symbolName)
+    }
+
+    private func templateIcon() -> NSImage? {
+        menuSymbolImage("doc.text")
+    }
+
+    private func applicationIcon(atPath path: String) -> NSImage? {
+        cachedApplicationIcon(path: path, fallbackSymbolName: MenuCommandGroup.openPinned.symbolName)
+    }
+
+    private func menuSymbolImage(_ symbolName: String) -> NSImage? {
+        let cacheKey = "symbol:\(symbolName)"
+        if let cached = menuImageCache[cacheKey] {
+            return cached
+        }
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else {
+            return nil
+        }
+        image.isTemplate = true
+        let resized = resizedMenuIcon(image)
+        menuImageCache[cacheKey] = resized
+        return resized
+    }
+
+    private func resizedMenuIcon(_ image: NSImage) -> NSImage {
+        let copy = image.copy() as? NSImage ?? image
+        copy.size = NSSize(width: 16, height: 16)
+        return copy
+    }
+
+    private func cachedApplicationIcon(bundleIdentifier: String, fallbackSymbolName: String) -> NSImage? {
+        let cacheKey = "bundle:\(bundleIdentifier)"
+        if let cached = menuImageCache[cacheKey] {
+            return cached
+        }
+
+        scheduleApplicationIconPreload(cacheKey: cacheKey, bundleIdentifier: bundleIdentifier)
+        return menuSymbolImage(fallbackSymbolName)
+    }
+
+    private func cachedApplicationIcon(path: String, fallbackSymbolName: String) -> NSImage? {
+        let cacheKey = "path:\(path)"
+        if let cached = menuImageCache[cacheKey] {
+            return cached
+        }
+
+        scheduleApplicationIconPreload(cacheKey: cacheKey, path: path)
+        return menuSymbolImage(fallbackSymbolName)
+    }
+
+    private func preloadApplicationIcons() {
+        for command in store.preferences.enabledOpenApplicationCommandsInCustomOrder {
+            if let bundleIdentifier = command.applicationBundleIdentifier {
+                scheduleApplicationIconPreload(cacheKey: "bundle:\(bundleIdentifier)", bundleIdentifier: bundleIdentifier)
+            }
+        }
+        for path in store.preferences.pinnedApplicationPaths {
+            scheduleApplicationIconPreload(cacheKey: "path:\(path)", path: path)
+        }
+    }
+
+    private func scheduleApplicationIconPreload(cacheKey: String, bundleIdentifier: String) {
+        guard menuImageCache[cacheKey] == nil,
+              pendingApplicationIconCacheKeys.insert(cacheKey).inserted
+        else {
+            return
+        }
+
+        let finderSyncAddress = Int(bitPattern: Unmanaged.passUnretained(self).toOpaque())
+        DispatchQueue.main.async {
+            guard let pointer = UnsafeRawPointer(bitPattern: finderSyncAddress) else { return }
+            let finderSync = Unmanaged<FinderSync>
+                .fromOpaque(pointer)
+                .takeUnretainedValue()
+            defer { finderSync.pendingApplicationIconCacheKeys.remove(cacheKey) }
+            guard finderSync.menuImageCache[cacheKey] == nil,
+                  let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+            else {
+                return
+            }
+            finderSync.menuImageCache[cacheKey] = finderSync.resizedMenuIcon(NSWorkspace.shared.icon(forFile: appURL.path))
+        }
+    }
+
+    private func scheduleApplicationIconPreload(cacheKey: String, path: String) {
+        guard menuImageCache[cacheKey] == nil,
+              pendingApplicationIconCacheKeys.insert(cacheKey).inserted
+        else {
+            return
+        }
+
+        let finderSyncAddress = Int(bitPattern: Unmanaged.passUnretained(self).toOpaque())
+        DispatchQueue.main.async {
+            guard let pointer = UnsafeRawPointer(bitPattern: finderSyncAddress) else { return }
+            let finderSync = Unmanaged<FinderSync>
+                .fromOpaque(pointer)
+                .takeUnretainedValue()
+            defer { finderSync.pendingApplicationIconCacheKeys.remove(cacheKey) }
+            guard finderSync.menuImageCache[cacheKey] == nil,
+                  FileManager.default.fileExists(atPath: path)
+            else {
+                return
+            }
+            finderSync.menuImageCache[cacheKey] = finderSync.resizedMenuIcon(NSWorkspace.shared.icon(forFile: path))
+        }
     }
 
     private func defaultActionTitle(_ title: String) -> String {

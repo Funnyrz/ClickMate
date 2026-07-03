@@ -108,7 +108,6 @@
 		200000000000000000000004 /* Views/TemplatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/TemplatesView.swift; sourceTree = "<group>"; };
 		200000000000000000000005 /* Views/AppsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AppsView.swift; sourceTree = "<group>"; };
 		200000000000000000000006 /* Views/PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/PermissionsView.swift; sourceTree = "<group>"; };
-		200000000000000000000026 /* Views/MenuLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuLayoutView.swift; sourceTree = "<group>"; };
 		200000000000000000000007 /* Support/URLRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support/URLRouter.swift; sourceTree = "<group>"; };
 		200000000000000000000008 /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConstants.swift; sourceTree = "<group>"; };
 		200000000000000000000009 /* FileTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTemplate.swift; sourceTree = "<group>"; };
@@ -140,6 +139,7 @@
 		200000000000000000000023 /* ClickMateIconEN.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ClickMateIconEN.icns; sourceTree = "<group>"; };
 		200000000000000000000024 /* ClickMateIconZH.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ClickMateIconZH.icns; sourceTree = "<group>"; };
 		200000000000000000000025 /* PendingCommandQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingCommandQueue.swift; sourceTree = "<group>"; };
+		200000000000000000000026 /* Views/MenuLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuLayoutView.swift; sourceTree = "<group>"; };
 		400000000000000000000001 /* ClickMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000002 /* ClickMateFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClickMateFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000003 /* ClickMateCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClickMateCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -615,9 +615,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClickMate/ClickMate.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = AA8ZVDT74G;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClickMate/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -625,7 +626,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.clickmate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -637,9 +638,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClickMate/ClickMate.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = AA8ZVDT74G;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClickMate/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -647,7 +649,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.clickmate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -658,10 +660,10 @@
 		800000000000000000000005 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = ClickMateFinderExtension/ClickMateFinderExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = AA8ZVDT74G;
-				APPLICATION_EXTENSION_API_ONLY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClickMateFinderExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -670,7 +672,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.FinderExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.clickmate.FinderExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 6.0;
@@ -680,10 +682,10 @@
 		800000000000000000000006 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = ClickMateFinderExtension/ClickMateFinderExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = AA8ZVDT74G;
-				APPLICATION_EXTENSION_API_ONLY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClickMateFinderExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -692,7 +694,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.FinderExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.clickmate.FinderExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 6.0;

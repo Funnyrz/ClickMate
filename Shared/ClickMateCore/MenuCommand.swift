@@ -63,23 +63,78 @@ enum MenuCommand: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    static func openApplicationCommand(forBundleIdentifier bundleIdentifier: String) -> MenuCommand? {
-        switch bundleIdentifier {
-        case "com.apple.Terminal":
-            return .openTerminal
-        case "com.googlecode.iterm2":
-            return .openITerm
-        case "com.microsoft.VSCode":
-            return .openVSCode
-        case "com.todesktop.230313mzl4w4u92":
-            return .openCursor
-        case "com.barebones.bbedit":
-            return .openBBEdit
-        case "com.sublimetext.4":
-            return .openSublime
+    var symbolName: String {
+        switch self {
+        case .newFile:
+            return "doc.badge.plus"
+        case .copyPOSIXPath:
+            return "point.topleft.down.curvedto.point.bottomright.up"
+        case .copyFileURL:
+            return "link"
+        case .copyShellPath:
+            return "terminal"
+        case .copyFilename:
+            return "doc.text"
+        case .copyBasename:
+            return "textformat"
+        case .copyExtension:
+            return "doc.badge.gearshape"
+        case .copyParentPath:
+            return "folder"
+        case .openTerminal:
+            return "terminal"
+        case .openITerm:
+            return "terminal.fill"
+        case .openVSCode:
+            return "chevron.left.forwardslash.chevron.right"
+        case .openCursor:
+            return "cursorarrow"
+        case .openBBEdit:
+            return "text.cursor"
+        case .openSublime:
+            return "curlybraces"
+        case .sha256, .sha1, .md5:
+            return "number"
+        case .revealParent:
+            return "folder"
+        case .duplicateTimestamp:
+            return "doc.on.doc"
+        case .createAlias:
+            return "arrowshape.turn.up.right"
+        case .moveToNewFolder:
+            return "folder.badge.plus"
+        case .compress:
+            return "archivebox"
+        case .metadata:
+            return "info.circle"
+        case .imageDimensions:
+            return "photo"
+        case .toggleHiddenFiles:
+            return "eye"
+        }
+    }
+
+    var applicationBundleIdentifier: String? {
+        switch self {
+        case .openTerminal:
+            return "com.apple.Terminal"
+        case .openITerm:
+            return "com.googlecode.iterm2"
+        case .openVSCode:
+            return "com.microsoft.VSCode"
+        case .openCursor:
+            return "com.todesktop.230313mzl4w4u92"
+        case .openBBEdit:
+            return "com.barebones.bbedit"
+        case .openSublime:
+            return "com.sublimetext.4"
         default:
             return nil
         }
+    }
+
+    static func openApplicationCommand(forBundleIdentifier bundleIdentifier: String) -> MenuCommand? {
+        allCases.first { $0.applicationBundleIdentifier == bundleIdentifier }
     }
 }
 
@@ -107,6 +162,25 @@ enum MenuCommandGroup: String, Codable, CaseIterable, Identifiable, Hashable {
         case .hash: return "menu.hash"
         case .fileUtilities: return "menu.fileUtilities"
         case .advanced: return "menu.advanced"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .newFile:
+            return "doc.badge.plus"
+        case .copy:
+            return "doc.on.doc"
+        case .openHere:
+            return "terminal"
+        case .openPinned:
+            return "app"
+        case .hash:
+            return "number"
+        case .fileUtilities:
+            return "folder"
+        case .advanced:
+            return "gearshape"
         }
     }
 

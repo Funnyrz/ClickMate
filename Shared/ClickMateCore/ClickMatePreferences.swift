@@ -16,6 +16,8 @@ struct ClickMatePreferences: Codable, Equatable {
     var detectedApplicationOrder: [String]
     var pinnedApplicationPaths: [String]
     var language: AppLanguage
+    var hasDismissedPermissionGuide: Bool
+    var menuLayoutDefaultsVersion: Int
 
     init(
         enabledCommands: Set<MenuCommand>,
@@ -27,7 +29,9 @@ struct ClickMatePreferences: Codable, Equatable {
         monitoredFolderBookmarks: [String: Data] = [:],
         detectedApplicationOrder: [String] = AppDetector.defaultApplicationOrder,
         pinnedApplicationPaths: [String],
-        language: AppLanguage = .system
+        language: AppLanguage = .system,
+        hasDismissedPermissionGuide: Bool = false,
+        menuLayoutDefaultsVersion: Int = Self.currentMenuLayoutDefaultsVersion
     ) {
         self.enabledCommands = enabledCommands
         self.menuCommandOrder = Self.normalizedMenuCommandOrder(menuCommandOrder)
@@ -39,7 +43,11 @@ struct ClickMatePreferences: Codable, Equatable {
         self.detectedApplicationOrder = AppDetector.normalizedApplicationOrder(detectedApplicationOrder)
         self.pinnedApplicationPaths = pinnedApplicationPaths
         self.language = language
+        self.hasDismissedPermissionGuide = hasDismissedPermissionGuide
+        self.menuLayoutDefaultsVersion = menuLayoutDefaultsVersion
     }
+
+    static let currentMenuLayoutDefaultsVersion = 1
 
     static let defaults = ClickMatePreferences(
         enabledCommands: Set(MenuCommand.allCases),
@@ -51,7 +59,9 @@ struct ClickMatePreferences: Codable, Equatable {
         monitoredFolderBookmarks: [:],
         detectedApplicationOrder: AppDetector.defaultApplicationOrder,
         pinnedApplicationPaths: [],
-        language: .system
+        language: .system,
+        hasDismissedPermissionGuide: false,
+        menuLayoutDefaultsVersion: currentMenuLayoutDefaultsVersion
     )
 
     var orderedMenuCommands: [MenuCommand] {
@@ -107,6 +117,8 @@ struct ClickMatePreferences: Codable, Equatable {
         case detectedApplicationOrder
         case pinnedApplicationPaths
         case language
+        case hasDismissedPermissionGuide
+        case menuLayoutDefaultsVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -125,12 +137,26 @@ struct ClickMatePreferences: Codable, Equatable {
         )
         pinnedApplicationPaths = try container.decodeIfPresent([String].self, forKey: .pinnedApplicationPaths) ?? []
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
+        hasDismissedPermissionGuide = try container.decodeIfPresent(Bool.self, forKey: .hasDismissedPermissionGuide) ?? false
+        menuLayoutDefaultsVersion = try container.decodeIfPresent(Int.self, forKey: .menuLayoutDefaultsVersion) ?? 0
+    }
+
+    mutating func migrateMenuLayoutDefaultsIfNeeded() -> Bool {
+        guard menuLayoutDefaultsVersion < Self.currentMenuLayoutDefaultsVersion else {
+            return false
+        }
+
+        if foldedMenuGroups == Set(MenuCommandGroup.allCases) {
+            foldedMenuGroups = MenuCommandGroup.defaultFoldedGroups
+        }
+        menuLayoutDefaultsVersion = Self.currentMenuLayoutDefaultsVersion
+        return true
     }
 }
 
 extension MenuCommandGroup {
     static var defaultFoldedGroups: Set<MenuCommandGroup> {
-        Set(MenuCommandGroup.allCases)
+        []
     }
 }
 
@@ -153,7 +179,7 @@ enum MenuLayoutPolicy {
                 default:
                     return group.commands.contains { preferences.enabledCommands.contains($0) }
                 }
-            } + visiblePinnedGroup(for: preferences)
+            }
     }
 
     static func placement(for preferences: ClickMatePreferences) -> MenuGroupPlacement {
@@ -164,9 +190,6 @@ enum MenuLayoutPolicy {
         )
     }
 
-    private static func visiblePinnedGroup(for preferences: ClickMatePreferences) -> [MenuCommandGroup] {
-        preferences.pinnedApplicationPaths.isEmpty ? [] : [.openPinned]
-    }
 }
 
 private extension Array where Element: Hashable {
@@ -195,9 +218,10 @@ final class PreferencesStore: ObservableObject {
     init(fileURL: URL = PreferencesStore.sharedPreferencesURL) {
         self.fileURL = fileURL
         Self.migrateFallbackPreferencesIfNeeded(to: fileURL)
-        self.preferences = Self.load(from: fileURL)
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            save(preferences)
+        let loaded = Self.loadWithMigration(from: fileURL)
+        self.preferences = loaded.preferences
+        if !FileManager.default.fileExists(atPath: fileURL.path) || loaded.didMigrate {
+            saveSynchronously(preferences)
         }
     }
 
@@ -207,8 +231,12 @@ final class PreferencesStore: ObservableObject {
 
     func reload() {
         isReloading = true
-        preferences = Self.load(from: fileURL)
+        let loaded = Self.loadWithMigration(from: fileURL)
+        preferences = loaded.preferences
         isReloading = false
+        if loaded.didMigrate {
+            saveSynchronously(preferences)
+        }
     }
 
     func replaceLoadedPreferences(_ loadedPreferences: ClickMatePreferences) {
@@ -222,37 +250,56 @@ final class PreferencesStore: ObservableObject {
     }
 
     static func loadSnapshot(fileURL: URL = PreferencesStore.sharedPreferencesURL) -> ClickMatePreferences {
-        load(from: fileURL)
+        loadWithMigration(from: fileURL).preferences
     }
 
     static func currentLanguagePreference(fileURL: URL = PreferencesStore.sharedPreferencesURL) -> AppLanguage {
-        load(from: fileURL).language
+        loadWithMigration(from: fileURL).preferences.language
     }
 
     private func save(_ preferences: ClickMatePreferences) {
         let fileURL = fileURL
         saveQueue.async {
-            guard let data = try? JSONEncoder().encode(preferences) else { return }
-            do {
+            Self.write(preferences, to: fileURL)
+        }
+    }
+
+    private func saveSynchronously(_ preferences: ClickMatePreferences) {
+        let fileURL = fileURL
+        saveQueue.sync {
+            Self.write(preferences, to: fileURL)
+        }
+    }
+
+    private static func write(_ preferences: ClickMatePreferences, to fileURL: URL) {
+        guard let data = try? JSONEncoder().encode(preferences) else { return }
+        do {
+            let directoryURL = fileURL.deletingLastPathComponent()
+            if directoryURL.path != fileURL.path {
                 try FileManager.default.createDirectory(
-                    at: fileURL.deletingLastPathComponent(),
+                    at: directoryURL,
                     withIntermediateDirectories: true
                 )
-                try data.write(to: fileURL, options: .atomic)
-                PreferencesChangeNotifier.post()
-            } catch {
-                assertionFailure("Could not save ClickMate preferences: \(error.localizedDescription)")
             }
+            try data.write(to: fileURL, options: .atomic)
+            PreferencesChangeNotifier.post()
+        } catch {
+            assertionFailure("Could not save ClickMate preferences: \(error.localizedDescription)")
         }
     }
 
     private static func load(from fileURL: URL) -> ClickMatePreferences {
+        loadWithMigration(from: fileURL).preferences
+    }
+
+    private static func loadWithMigration(from fileURL: URL) -> (preferences: ClickMatePreferences, didMigrate: Bool) {
         guard let data = try? Data(contentsOf: fileURL),
-              let preferences = try? JSONDecoder().decode(ClickMatePreferences.self, from: data)
+              var preferences = try? JSONDecoder().decode(ClickMatePreferences.self, from: data)
         else {
-            return .defaults
+            return (.defaults, false)
         }
-        return preferences
+        let didMigrate = preferences.migrateMenuLayoutDefaultsIfNeeded()
+        return (preferences, didMigrate)
     }
 
     private static func migrateFallbackPreferencesIfNeeded(to fileURL: URL) {
@@ -588,6 +635,98 @@ enum DiskAccessPolicy {
             return SecurityScopedFolderAccess.ScopedAccess(url: targetDirectory, didStartAccessing: false)
         }
         return SecurityScopedFolderAccess.scopedAccess(containing: targetDirectory, preferences: preferences)
+    }
+}
+
+enum FinderExtensionStatus: Equatable {
+    case enabled
+    case disabled
+    case notRegistered
+    case unknown
+}
+
+enum FinderExtensionPolicy {
+    typealias ProcessRunner = (_ executableURL: URL, _ arguments: [String]) -> (status: Int32, output: String)?
+
+    static func reloadBundledExtension(
+        appBundleURL: URL = Bundle.main.bundleURL,
+        bundleIdentifier: String = AppConstants.finderExtensionBundleIdentifier,
+        runProcess: ProcessRunner = runProcess
+    ) async -> FinderExtensionStatus {
+        if let extensionURL = bundledExtensionURL(in: appBundleURL) {
+            _ = runProcess(URL(fileURLWithPath: "/usr/bin/pluginkit"), ["-a", extensionURL.path])
+        }
+
+        _ = runProcess(URL(fileURLWithPath: "/usr/bin/pluginkit"), [
+            "-e", "use",
+            "-p", "com.apple.FinderSync",
+            "-i", bundleIdentifier
+        ])
+
+        return await status(bundleIdentifier: bundleIdentifier, runProcess: runProcess)
+    }
+
+    static func status(
+        bundleIdentifier: String = AppConstants.finderExtensionBundleIdentifier,
+        runProcess: ProcessRunner = runProcess
+    ) async -> FinderExtensionStatus {
+        guard let result = runProcess(URL(fileURLWithPath: "/usr/bin/pluginkit"), [
+            "-m",
+            "-p", "com.apple.FinderSync",
+            "-i", bundleIdentifier
+        ]), result.status == 0 else {
+            return .unknown
+        }
+
+        return status(fromPlugInKitOutput: result.output)
+    }
+
+    static func bundledExtensionURL(in appBundleURL: URL) -> URL? {
+        let plugInsURL = appBundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("PlugIns", isDirectory: true)
+        let extensionURL = plugInsURL.appendingPathComponent("ClickMateFinderExtension.appex", isDirectory: true)
+        if FileManager.default.fileExists(atPath: extensionURL.path) {
+            return extensionURL
+        }
+        return nil
+    }
+
+    private static func runProcess(executableURL: URL, arguments: [String]) -> (status: Int32, output: String)? {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+        return (process.terminationStatus, output)
+    }
+
+    static func status(fromPlugInKitOutput output: String) -> FinderExtensionStatus {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstCharacter = trimmed.first else {
+            return .notRegistered
+        }
+
+        switch firstCharacter {
+        case "+":
+            return .enabled
+        case "-":
+            return .disabled
+        default:
+            return .unknown
+        }
     }
 }
 
