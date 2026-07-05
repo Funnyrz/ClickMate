@@ -4,6 +4,12 @@
 
 ClickMate, 中文名“右键大师”，是一个原生 macOS Finder 右键菜单增强工具。它基于 SwiftUI、AppKit 和 Finder Sync extension 构建，可以在 Finder 右键菜单中加入可配置的 `ClickMate` 子菜单，让常用文件和文件夹操作更顺手。
 
+![右键大师访达右键菜单](img/clickmate-menu-zh-CN.png)
+
+![右键大师设置界面 - 菜单](img/clickmate-settings-1-zh-CN.png)
+
+![右键大师设置界面 - 权限](img/clickmate-settings-2-zh-CN.png)
+
 ## 功能特性
 
 - 支持选中文件、选中文件夹，以及已监控文件夹空白区域的 Finder 右键菜单。

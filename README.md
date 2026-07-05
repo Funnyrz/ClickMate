@@ -4,6 +4,12 @@
 
 ClickMate is a native macOS Finder context-menu enhancer built with SwiftUI, AppKit, and a Finder Sync extension. It adds a configurable `ClickMate` submenu to Finder so common file and folder actions are available directly from right-click menus.
 
+![ClickMate Finder menu](img/clickmate-menu-en.png)
+
+![ClickMate settings window - menus](img/clickmate-settings-1-en.png)
+
+![ClickMate settings window - permissions](img/clickmate-settings-2-en.png)
+
 ## Features
 
 - Finder integration for selected files, selected folders, and monitored folder backgrounds.
