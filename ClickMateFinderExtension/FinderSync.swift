@@ -4,6 +4,7 @@ import OSLog
 
 class FinderSync: FIFinderSync {
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderSync")
+    private let menuIconSize = NSSize(width: 16, height: 16)
     private lazy var store = PreferencesStore()
     private var latestMenuContext: FinderContext?
     private var menuActionTokens: [Int: FinderCommandToken] = [:]
@@ -353,23 +354,45 @@ class FinderSync: FIFinderSync {
     }
 
     private func menuSymbolImage(_ symbolName: String) -> NSImage? {
-        let cacheKey = "symbol:\(symbolName)"
+        let appearance = currentMenuIconAppearance()
+        let cacheKey = "symbol:\(appearance.cacheKey):\(symbolName)"
         if let cached = menuImageCache[cacheKey] {
             return cached
         }
         guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else {
             return nil
         }
-        image.isTemplate = true
-        let resized = resizedMenuIcon(image)
+        let resized = renderedMenuSymbolImage(image, color: appearance.symbolColor)
         menuImageCache[cacheKey] = resized
         return resized
     }
 
     private func resizedMenuIcon(_ image: NSImage) -> NSImage {
         let copy = image.copy() as? NSImage ?? image
-        copy.size = NSSize(width: 16, height: 16)
+        copy.size = menuIconSize
         return copy
+    }
+
+    private func renderedMenuSymbolImage(_ image: NSImage, color: NSColor) -> NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        let source = image.withSymbolConfiguration(configuration) ?? image
+        let rendered = NSImage(size: menuIconSize)
+        rendered.lockFocus()
+        defer { rendered.unlockFocus() }
+
+        let rect = NSRect(origin: .zero, size: menuIconSize)
+        source.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        color.setFill()
+        rect.fill(using: .sourceIn)
+        rendered.isTemplate = false
+        return rendered
+    }
+
+    private func currentMenuIconAppearance() -> MenuIconAppearance {
+        if UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" {
+            return .dark
+        }
+        return .light
     }
 
     private func cachedApplicationIcon(bundleIdentifier: String, fallbackSymbolName: String) -> NSImage? {
@@ -712,5 +735,26 @@ private struct FinderContext {
             return [targetedURL]
         }
         return selectedURLs
+    }
+}
+
+private enum MenuIconAppearance {
+    case light
+    case dark
+
+    var cacheKey: String {
+        switch self {
+        case .light: return "light"
+        case .dark: return "dark"
+        }
+    }
+
+    var symbolColor: NSColor {
+        switch self {
+        case .light:
+            return NSColor.labelColor
+        case .dark:
+            return NSColor.white.withAlphaComponent(0.88)
+        }
     }
 }
