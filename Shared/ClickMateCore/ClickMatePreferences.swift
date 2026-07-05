@@ -9,11 +9,13 @@ struct ClickMatePreferences: Codable, Equatable {
     var enabledCommands: Set<MenuCommand>
     var menuCommandOrder: [MenuCommand]
     var foldedMenuGroups: Set<MenuCommandGroup>
+    var removedMenuCommands: Set<MenuCommand>
     var templates: [FileTemplate]
     var monitoringMode: MonitoringMode
     var monitoredFolderPaths: [String]
     var monitoredFolderBookmarks: [String: Data]
     var detectedApplicationOrder: [String]
+    var removedDetectedApplicationBundleIDs: Set<String>
     var pinnedApplicationPaths: [String]
     var language: AppLanguage
     var hasDismissedPermissionGuide: Bool
@@ -23,17 +25,20 @@ struct ClickMatePreferences: Codable, Equatable {
         enabledCommands: Set<MenuCommand>,
         menuCommandOrder: [MenuCommand] = MenuCommand.allCases,
         foldedMenuGroups: Set<MenuCommandGroup> = MenuCommandGroup.defaultFoldedGroups,
+        removedMenuCommands: Set<MenuCommand> = [],
         templates: [FileTemplate],
         monitoringMode: MonitoringMode = .wideCoverage,
         monitoredFolderPaths: [String],
         monitoredFolderBookmarks: [String: Data] = [:],
         detectedApplicationOrder: [String] = AppDetector.defaultApplicationOrder,
+        removedDetectedApplicationBundleIDs: Set<String> = [],
         pinnedApplicationPaths: [String],
         language: AppLanguage = .system,
         hasDismissedPermissionGuide: Bool = false,
         menuLayoutDefaultsVersion: Int = Self.currentMenuLayoutDefaultsVersion
     ) {
-        self.enabledCommands = enabledCommands
+        self.removedMenuCommands = removedMenuCommands
+        self.enabledCommands = enabledCommands.subtracting(removedMenuCommands)
         self.menuCommandOrder = Self.normalizedMenuCommandOrder(menuCommandOrder)
         self.foldedMenuGroups = foldedMenuGroups
         self.templates = templates
@@ -41,6 +46,7 @@ struct ClickMatePreferences: Codable, Equatable {
         self.monitoredFolderPaths = monitoredFolderPaths
         self.monitoredFolderBookmarks = monitoredFolderBookmarks
         self.detectedApplicationOrder = AppDetector.normalizedApplicationOrder(detectedApplicationOrder)
+        self.removedDetectedApplicationBundleIDs = removedDetectedApplicationBundleIDs.intersection(AppDetector.defaultApplicationOrder)
         self.pinnedApplicationPaths = pinnedApplicationPaths
         self.language = language
         self.hasDismissedPermissionGuide = hasDismissedPermissionGuide
@@ -53,11 +59,13 @@ struct ClickMatePreferences: Codable, Equatable {
         enabledCommands: Set(MenuCommand.allCases),
         menuCommandOrder: MenuCommand.allCases,
         foldedMenuGroups: MenuCommandGroup.defaultFoldedGroups,
+        removedMenuCommands: [],
         templates: FileTemplate.defaults,
         monitoringMode: .wideCoverage,
         monitoredFolderPaths: [],
         monitoredFolderBookmarks: [:],
         detectedApplicationOrder: AppDetector.defaultApplicationOrder,
+        removedDetectedApplicationBundleIDs: [],
         pinnedApplicationPaths: [],
         language: .system,
         hasDismissedPermissionGuide: false,
@@ -66,16 +74,22 @@ struct ClickMatePreferences: Codable, Equatable {
 
     var orderedMenuCommands: [MenuCommand] {
         Self.normalizedMenuCommandOrder(menuCommandOrder)
+            .filter { !removedMenuCommands.contains($0) }
     }
 
     var enabledMenuCommandsInCustomOrder: [MenuCommand] {
         orderedMenuCommands.filter { enabledCommands.contains($0) }
     }
 
+    var orderedDetectedApplicationBundleIDs: [String] {
+        AppDetector.normalizedApplicationOrder(detectedApplicationOrder)
+            .filter { !removedDetectedApplicationBundleIDs.contains($0) }
+    }
+
     var enabledOpenApplicationCommandsInCustomOrder: [MenuCommand] {
-        detectedApplicationOrder
+        orderedDetectedApplicationBundleIDs
             .compactMap(MenuCommand.openApplicationCommand(forBundleIdentifier:))
-            .filter { enabledCommands.contains($0) }
+            .filter { enabledCommands.contains($0) && !removedMenuCommands.contains($0) }
     }
 
     var orderedVisibleMenuGroups: [MenuCommandGroup] {
@@ -106,15 +120,38 @@ struct ClickMatePreferences: Codable, Equatable {
         MonitoredFolderPolicy.defaultMonitoredFolderPaths()
     }
 
+    mutating func removeMenuCommand(_ command: MenuCommand) {
+        removedMenuCommands.insert(command)
+        enabledCommands.remove(command)
+    }
+
+    mutating func removeDetectedApplication(bundleIdentifier: String) {
+        guard AppDetector.defaultApplicationOrder.contains(bundleIdentifier) else { return }
+        removedDetectedApplicationBundleIDs.insert(bundleIdentifier)
+        if let command = MenuCommand.openApplicationCommand(forBundleIdentifier: bundleIdentifier) {
+            enabledCommands.remove(command)
+        }
+    }
+
+    mutating func restoreRemovedDefaults() {
+        removedMenuCommands.removeAll()
+        removedDetectedApplicationBundleIDs.removeAll()
+
+        let existingTemplateIDs = Set(templates.map(\.id))
+        templates.append(contentsOf: FileTemplate.defaults.filter { !existingTemplateIDs.contains($0.id) })
+    }
+
     private enum CodingKeys: String, CodingKey {
         case enabledCommands
         case menuCommandOrder
         case foldedMenuGroups
+        case removedMenuCommands
         case templates
         case monitoringMode
         case monitoredFolderPaths
         case monitoredFolderBookmarks
         case detectedApplicationOrder
+        case removedDetectedApplicationBundleIDs
         case pinnedApplicationPaths
         case language
         case hasDismissedPermissionGuide
@@ -128,6 +165,8 @@ struct ClickMatePreferences: Codable, Equatable {
             try container.decodeIfPresent([MenuCommand].self, forKey: .menuCommandOrder) ?? MenuCommand.allCases
         )
         foldedMenuGroups = try container.decodeIfPresent(Set<MenuCommandGroup>.self, forKey: .foldedMenuGroups) ?? MenuCommandGroup.defaultFoldedGroups
+        removedMenuCommands = try container.decodeIfPresent(Set<MenuCommand>.self, forKey: .removedMenuCommands) ?? []
+        enabledCommands.subtract(removedMenuCommands)
         templates = try container.decode([FileTemplate].self, forKey: .templates)
         monitoringMode = try container.decodeIfPresent(MonitoringMode.self, forKey: .monitoringMode) ?? .wideCoverage
         monitoredFolderPaths = try container.decodeIfPresent([String].self, forKey: .monitoredFolderPaths) ?? []
@@ -135,6 +174,8 @@ struct ClickMatePreferences: Codable, Equatable {
         detectedApplicationOrder = AppDetector.normalizedApplicationOrder(
             try container.decodeIfPresent([String].self, forKey: .detectedApplicationOrder) ?? AppDetector.defaultApplicationOrder
         )
+        let removedBundleIDs = try container.decodeIfPresent(Set<String>.self, forKey: .removedDetectedApplicationBundleIDs) ?? []
+        removedDetectedApplicationBundleIDs = removedBundleIDs.intersection(AppDetector.defaultApplicationOrder)
         pinnedApplicationPaths = try container.decodeIfPresent([String].self, forKey: .pinnedApplicationPaths) ?? []
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         hasDismissedPermissionGuide = try container.decodeIfPresent(Bool.self, forKey: .hasDismissedPermissionGuide) ?? false

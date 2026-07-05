@@ -489,11 +489,13 @@ final class ClickMateCoreTests: XCTestCase {
             enabledCommands: [.copyPOSIXPath],
             menuCommandOrder: [.md5, .copyPOSIXPath, .newFile],
             foldedMenuGroups: [.copy, .hash],
+            removedMenuCommands: [.newFile],
             templates: templates,
             monitoringMode: .wideCoverage,
             monitoredFolderPaths: [secondFolder.path, folder.path],
             monitoredFolderBookmarks: [folder.path: Data("bookmark".utf8)],
             detectedApplicationOrder: ["com.microsoft.VSCode", "com.apple.Terminal"],
+            removedDetectedApplicationBundleIDs: ["com.apple.Terminal"],
             pinnedApplicationPaths: ["/Applications/Zed.app", "/Applications/Test.app"]
         )
         store.waitForPendingSaves()
@@ -501,13 +503,18 @@ final class ClickMateCoreTests: XCTestCase {
         let reloaded = PreferencesStore(fileURL: fileURL)
 
         XCTAssertEqual(reloaded.preferences.monitoringMode, .wideCoverage)
-        XCTAssertEqual(Array(reloaded.preferences.orderedMenuCommands.prefix(3)), [.md5, .copyPOSIXPath, .newFile])
+        XCTAssertEqual(Array(reloaded.preferences.menuCommandOrder.prefix(3)), [.md5, .copyPOSIXPath, .newFile])
+        XCTAssertEqual(Array(reloaded.preferences.orderedMenuCommands.prefix(3)), [.md5, .copyPOSIXPath, .copyFileURL])
         XCTAssertEqual(reloaded.preferences.enabledMenuCommandsInCustomOrder, [.copyPOSIXPath])
         XCTAssertEqual(reloaded.preferences.foldedMenuGroups, [.copy, .hash])
+        XCTAssertEqual(reloaded.preferences.removedMenuCommands, [.newFile])
         XCTAssertEqual(reloaded.preferences.templates.map(\.id), ["custom-a", "custom-b"])
         XCTAssertEqual(reloaded.preferences.monitoredFolderPaths, [secondFolder.path, folder.path])
         XCTAssertEqual(reloaded.preferences.monitoredFolderBookmarks, [folder.path: Data("bookmark".utf8)])
         XCTAssertEqual(Array(reloaded.preferences.detectedApplicationOrder.prefix(2)), ["com.microsoft.VSCode", "com.apple.Terminal"])
+        XCTAssertEqual(reloaded.preferences.orderedDetectedApplicationBundleIDs.first, "com.microsoft.VSCode")
+        XCTAssertFalse(reloaded.preferences.orderedDetectedApplicationBundleIDs.contains("com.apple.Terminal"))
+        XCTAssertEqual(reloaded.preferences.removedDetectedApplicationBundleIDs, ["com.apple.Terminal"])
         XCTAssertEqual(reloaded.preferences.pinnedApplicationPaths, ["/Applications/Zed.app", "/Applications/Test.app"])
     }
 
@@ -553,7 +560,9 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(preferences.monitoredFolderPaths, ["/Users/example"])
         XCTAssertEqual(preferences.menuCommandOrder, MenuCommand.allCases)
         XCTAssertTrue(preferences.foldedMenuGroups.isEmpty)
+        XCTAssertTrue(preferences.removedMenuCommands.isEmpty)
         XCTAssertEqual(preferences.detectedApplicationOrder, AppDetector.defaultApplicationOrder)
+        XCTAssertTrue(preferences.removedDetectedApplicationBundleIDs.isEmpty)
     }
 
     func testMenuLayoutDefaultsToTopLevelGroups() throws {
@@ -663,6 +672,24 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(preferences.enabledMenuCommandsInCustomOrder, [.md5, .copyPOSIXPath, .sha256])
     }
 
+    func testRemovedMenuCommandsAreExcludedFromSettingsAndVisibleGroups() throws {
+        var preferences = ClickMatePreferences(
+            enabledCommands: [.newFile, .copyPOSIXPath, .copyFileURL],
+            menuCommandOrder: [.newFile, .copyPOSIXPath, .copyFileURL],
+            templates: FileTemplate.defaults,
+            monitoredFolderPaths: [],
+            pinnedApplicationPaths: []
+        )
+
+        preferences.removeMenuCommand(.newFile)
+        preferences.removeMenuCommand(.copyPOSIXPath)
+
+        XCTAssertFalse(preferences.orderedMenuCommands.contains(.newFile))
+        XCTAssertFalse(preferences.enabledCommands.contains(.newFile))
+        XCTAssertEqual(preferences.enabledMenuCommandsInCustomOrder, [.copyFileURL])
+        XCTAssertEqual(preferences.orderedVisibleMenuGroups, [.copy])
+    }
+
     func testPreferencesMapsApplicationOrderToEnabledOpenCommands() throws {
         let preferences = ClickMatePreferences(
             enabledCommands: [.openTerminal, .openVSCode, .openCursor],
@@ -677,6 +704,49 @@ final class ClickMateCoreTests: XCTestCase {
         )
 
         XCTAssertEqual(preferences.enabledOpenApplicationCommandsInCustomOrder, [.openCursor, .openVSCode, .openTerminal])
+    }
+
+    func testRemovedDetectedApplicationsAreExcludedFromOpenCommands() throws {
+        var preferences = ClickMatePreferences(
+            enabledCommands: [.openTerminal, .openVSCode, .openCursor],
+            templates: [],
+            monitoredFolderPaths: [],
+            detectedApplicationOrder: [
+                "com.todesktop.230313mzl4w4u92",
+                "com.microsoft.VSCode",
+                "com.apple.Terminal"
+            ],
+            pinnedApplicationPaths: []
+        )
+
+        preferences.removeDetectedApplication(bundleIdentifier: "com.microsoft.VSCode")
+
+        XCTAssertFalse(preferences.orderedDetectedApplicationBundleIDs.contains("com.microsoft.VSCode"))
+        XCTAssertFalse(preferences.enabledCommands.contains(.openVSCode))
+        XCTAssertEqual(preferences.enabledOpenApplicationCommandsInCustomOrder, [.openCursor, .openTerminal])
+    }
+
+    func testRestoreRemovedDefaultsRestoresHiddenDefaultsAndMissingTemplates() throws {
+        var preferences = ClickMatePreferences(
+            enabledCommands: [.copyPOSIXPath],
+            removedMenuCommands: [.newFile],
+            templates: [
+                FileTemplate(id: "custom-log", displayName: "Log", fileExtension: "log", defaultBasename: "Untitled", contents: "")
+            ],
+            monitoredFolderPaths: [],
+            removedDetectedApplicationBundleIDs: ["com.apple.Terminal"],
+            pinnedApplicationPaths: []
+        )
+
+        preferences.restoreRemovedDefaults()
+
+        XCTAssertTrue(preferences.removedMenuCommands.isEmpty)
+        XCTAssertTrue(preferences.removedDetectedApplicationBundleIDs.isEmpty)
+        XCTAssertTrue(preferences.orderedMenuCommands.contains(.newFile))
+        XCTAssertEqual(preferences.templates.first?.id, "custom-log")
+        for template in FileTemplate.defaults {
+            XCTAssertTrue(preferences.templates.contains { $0.id == template.id }, template.id)
+        }
     }
 
     func testLegacyPreferencesWithoutFoldersKeepsSelectionEmpty() throws {

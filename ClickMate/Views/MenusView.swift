@@ -14,6 +14,10 @@ struct MenusView: View {
                 ForEach(Array(store.preferences.orderedMenuCommands.enumerated()), id: \.element.id) { index, command in
                     SortableSettingsRow(index: index + 1) {
                         Toggle(command.title, isOn: binding(for: command))
+                        Spacer()
+                        RemoveButton {
+                            store.preferences.removeMenuCommand(command)
+                        }
                     }
                 }
                 .onMove { source, destination in
@@ -24,8 +28,11 @@ struct MenusView: View {
 
             HStack {
                 Button(L10n.string("button.enableAll")) {
-                    store.preferences.enabledCommands = Set(MenuCommand.allCases)
+                    store.preferences.enabledCommands = Set(store.preferences.orderedMenuCommands)
                     store.preferences.menuCommandOrder = store.preferences.orderedMenuCommands
+                }
+                Button(L10n.string("button.restoreRemoved")) {
+                    store.preferences.restoreRemovedDefaults()
                 }
                 Button(L10n.string("button.resetDefaults")) {
                     store.reset()
@@ -45,6 +52,21 @@ struct MenusView: View {
                 store.preferences.enabledCommands.remove(command)
             }
         }
+    }
+}
+
+struct RemoveButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(L10n.string("button.remove"))
+        .accessibilityLabel(L10n.string("button.remove"))
     }
 }
 

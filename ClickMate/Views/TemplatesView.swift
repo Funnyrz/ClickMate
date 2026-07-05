@@ -18,6 +18,9 @@ struct TemplatesView: View {
                         Spacer()
                         Text(".\(template.fileExtension)")
                             .foregroundStyle(.secondary)
+                        RemoveButton {
+                            store.preferences.templates.removeAll { $0.id == template.id }
+                        }
                     }
                 }
                 .onDelete { offsets in
@@ -36,6 +39,9 @@ struct TemplatesView: View {
                     addCustomTemplate()
                 }
                 .disabled(customExtension.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(L10n.string("button.restoreRemoved")) {
+                    store.preferences.restoreRemovedDefaults()
+                }
                 Spacer()
             }
         }

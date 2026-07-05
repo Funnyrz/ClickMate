@@ -33,11 +33,17 @@ enum AppDetector {
         }
     }
 
-    static func detectedApplications(order: [String], workspace: NSWorkspace = .shared) -> [DetectedApplication] {
+    static func detectedApplications(
+        order: [String],
+        removedBundleIdentifiers: Set<String> = [],
+        workspace: NSWorkspace = .shared
+    ) -> [DetectedApplication] {
         let detectedByBundleID = Dictionary(
             uniqueKeysWithValues: detectedApplications(workspace: workspace).map { ($0.bundleIdentifier, $0) }
         )
-        return normalizedApplicationOrder(order).compactMap { detectedByBundleID[$0] }
+        return normalizedApplicationOrder(order)
+            .filter { !removedBundleIdentifiers.contains($0) }
+            .compactMap { detectedByBundleID[$0] }
     }
 
     static func normalizedApplicationOrder(_ bundleIdentifiers: [String]) -> [String] {

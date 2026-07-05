@@ -8,6 +8,8 @@
 "button.enableAll" = "Enable All";
 "button.resetDefaults" = "Reset Defaults";
 "button.refresh" = "Refresh";
+"button.remove" = "Remove";
+"button.restoreRemoved" = "Restore Removed";
 
 "templates.title" = "New File Templates";
 "templates.description" = "Templates are used by the Finder background menu and by selected folders.";

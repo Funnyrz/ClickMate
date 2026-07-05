@@ -8,6 +8,8 @@
 "button.enableAll" = "全部启用";
 "button.resetDefaults" = "恢复默认";
 "button.refresh" = "刷新";
+"button.remove" = "移除";
+"button.restoreRemoved" = "恢复已移除项";
 
 "templates.title" = "新建文件模板";
 "templates.description" = "这些模板会用于访达空白处和文件夹右键菜单。";

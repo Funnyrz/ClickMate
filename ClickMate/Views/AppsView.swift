@@ -21,10 +21,13 @@ struct AppsView: View {
                             Text(app.path ?? L10n.string("apps.notInstalled"))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                            RemoveButton {
+                                store.preferences.removeDetectedApplication(bundleIdentifier: app.bundleIdentifier)
+                            }
                         }
                     }
                     .onMove { source, destination in
-                        store.preferences.detectedApplicationOrder = detectedApps.map(\.bundleIdentifier)
+                        store.preferences.detectedApplicationOrder = store.preferences.orderedDetectedApplicationBundleIDs
                         store.preferences.detectedApplicationOrder.move(fromOffsets: source, toOffset: destination)
                     }
                 }
@@ -39,6 +42,10 @@ struct AppsView: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
+                            }
+                            Spacer()
+                            RemoveButton {
+                                store.preferences.pinnedApplicationPaths.removeAll { $0 == path }
                             }
                         }
                     }
@@ -58,13 +65,19 @@ struct AppsView: View {
                 Button(L10n.string("apps.pinApplication")) {
                     pinApplication()
                 }
+                Button(L10n.string("button.restoreRemoved")) {
+                    store.preferences.restoreRemovedDefaults()
+                }
                 Spacer()
             }
         }
     }
 
     private var detectedApps: [DetectedApplication] {
-        AppDetector.detectedApplications(order: store.preferences.detectedApplicationOrder)
+        AppDetector.detectedApplications(
+            order: store.preferences.detectedApplicationOrder,
+            removedBundleIdentifiers: store.preferences.removedDetectedApplicationBundleIDs
+        )
     }
 
     private func pinApplication() {
