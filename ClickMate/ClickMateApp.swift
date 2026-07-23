@@ -23,8 +23,9 @@ struct ClickMateApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Start as an accessory app so Finder-triggered work never creates a Dock icon.
+        // Every launch begins hidden. A user-originated open event promotes the app later.
         NSApp.setActivationPolicy(.accessory)
+        registerAppleEventHandlers()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,17 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PreferencesStore.currentLanguagePreference()
         }
         observePendingCommands()
-        NSAppleEventManager.shared().setEventHandler(
-            self,
-            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
-        let launchedForBackgroundWork = PendingCommandQueue.hasPendingCommands()
         URLRouter.processPendingCommands()
-        if !launchedForBackgroundWork {
-            showSettingsWindow()
-        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -65,6 +56,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             URLRouter.handle(url)
         }
+    }
+
+    @objc private func handleOpenApplicationEvent(_ event: NSAppleEventDescriptor, withReplyEvent: NSAppleEventDescriptor) {
+        // Login items receive the same open-application event as a user launch, but carry this marker.
+        // They must remain an accessory app until the user explicitly reopens ClickMate.
+        let launchedInBackground = event.paramDescriptor(forKeyword: keyAELaunchedAsLogInItem) != nil
+            || event.paramDescriptor(forKeyword: keyAELaunchedAsServiceItem) != nil
+        guard !launchedInBackground else {
+            return
+        }
+        showSettingsWindow()
+    }
+
+    private func registerAppleEventHandlers() {
+        let manager = NSAppleEventManager.shared()
+        manager.setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+        manager.setEventHandler(
+            self,
+            andSelector: #selector(handleOpenApplicationEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEOpenApplication)
+        )
     }
 
     private func showSettingsWindow() {
