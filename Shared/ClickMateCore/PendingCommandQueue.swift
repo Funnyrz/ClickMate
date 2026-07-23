@@ -7,6 +7,8 @@ struct PendingCommand: Codable, Equatable, Identifiable {
         case copyHash
         case openHere
         case openApplication
+        case compress
+        case toggleHiddenFiles
     }
 
     var id: UUID
@@ -125,6 +127,32 @@ struct PendingCommand: Codable, Equatable, Identifiable {
             applicationPath: path
         )
     }
+
+    static func compress(urls: [URL]) -> PendingCommand {
+        PendingCommand(
+            id: UUID(),
+            kind: .compress,
+            templateID: nil,
+            directoryURL: nil,
+            urls: urls,
+            hashAlgorithm: nil,
+            menuCommand: nil,
+            applicationPath: nil
+        )
+    }
+
+    static func toggleHiddenFiles() -> PendingCommand {
+        PendingCommand(
+            id: UUID(),
+            kind: .toggleHiddenFiles,
+            templateID: nil,
+            directoryURL: nil,
+            urls: [],
+            hashAlgorithm: nil,
+            menuCommand: nil,
+            applicationPath: nil
+        )
+    }
 }
 
 enum PendingCommandQueue {
@@ -147,16 +175,7 @@ enum PendingCommandQueue {
 
     static func drain() -> [PendingCommand] {
         let fileManager = FileManager.default
-        guard let fileURLs = try? fileManager.contentsOfDirectory(
-            at: queueDirectoryURL,
-            includingPropertiesForKeys: nil
-        ) else {
-            return []
-        }
-
-        let commands = fileURLs
-            .filter { $0.pathExtension == "json" }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let commands = pendingCommandFileURLs()
             .compactMap { url -> PendingCommand? in
                 guard let data = try? Data(contentsOf: url),
                       let command = try? JSONDecoder().decode(PendingCommand.self, from: data)
@@ -167,6 +186,13 @@ enum PendingCommandQueue {
                 return command
             }
         return commands
+    }
+
+    static func hasPendingCommands() -> Bool {
+        pendingCommandFileURLs().contains { url in
+            guard let data = try? Data(contentsOf: url) else { return false }
+            return (try? JSONDecoder().decode(PendingCommand.self, from: data)) != nil
+        }
     }
 
     private static func save(_ command: PendingCommand) {
@@ -181,6 +207,19 @@ enum PendingCommandQueue {
         } catch {
             assertionFailure("Could not save pending ClickMate commands: \(error.localizedDescription)")
         }
+    }
+
+    private static func pendingCommandFileURLs() -> [URL] {
+        guard let fileURLs = try? FileManager.default.contentsOfDirectory(
+            at: queueDirectoryURL,
+            includingPropertiesForKeys: nil
+        ) else {
+            return []
+        }
+
+        return fileURLs
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     private static func postNotification() {

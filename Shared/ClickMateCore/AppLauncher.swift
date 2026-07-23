@@ -26,6 +26,39 @@ enum AppLauncher {
     }
 
     @discardableResult
+    static func openHere(command: MenuCommand, directory: URL) -> Bool {
+        switch command {
+        case .openTerminal:
+            openTerminal(at: directory)
+        case .openITerm:
+            openBundle(identifier: "com.googlecode.iterm2", with: [directory])
+        default:
+            false
+        }
+    }
+
+    @discardableResult
+    static func openApplication(command: MenuCommand?, applicationPath: String?, urls: [URL]) -> Bool {
+        if let applicationPath {
+            return openPinnedApplication(path: applicationPath, with: urls)
+        }
+
+        guard let command else { return false }
+        switch command {
+        case .openVSCode:
+            return openBundle(identifier: "com.microsoft.VSCode", with: urls)
+        case .openCursor:
+            return openBundle(identifier: "com.todesktop.230313mzl4w4u92", with: urls)
+        case .openBBEdit:
+            return openBundle(identifier: "com.barebones.bbedit", with: urls)
+        case .openSublime:
+            return openBundle(identifier: "com.sublimetext.4", with: urls)
+        default:
+            return false
+        }
+    }
+
+    @discardableResult
     static func openContainingApp(
         action: String,
         urls: [URL],

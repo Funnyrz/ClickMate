@@ -851,6 +851,25 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(decoded.urls, [file])
     }
 
+    func testPendingCompressCommandRoundTrips() throws {
+        let file = URL(fileURLWithPath: "/Users/example/Project/archive-me.txt")
+        let command = PendingCommand.compress(urls: [file])
+
+        let decoded = try JSONDecoder().decode(PendingCommand.self, from: JSONEncoder().encode(command))
+
+        XCTAssertEqual(decoded.kind, .compress)
+        XCTAssertEqual(decoded.urls, [file])
+    }
+
+    func testPendingToggleHiddenFilesCommandRoundTrips() throws {
+        let command = PendingCommand.toggleHiddenFiles()
+
+        let decoded = try JSONDecoder().decode(PendingCommand.self, from: JSONEncoder().encode(command))
+
+        XCTAssertEqual(decoded.kind, .toggleHiddenFiles)
+        XCTAssertTrue(decoded.urls.isEmpty)
+    }
+
     func testLegacyPendingCreateFileCommandDecodesWithoutURLList() throws {
         let json = """
         {

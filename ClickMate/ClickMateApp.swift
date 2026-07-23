@@ -22,6 +22,11 @@ struct ClickMateApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Start as an accessory app so Finder-triggered work never creates a Dock icon.
+        NSApp.setActivationPolicy(.accessory)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         L10n.languageProvider = {
             PreferencesStore.currentLanguagePreference()
@@ -33,7 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        let launchedForBackgroundWork = PendingCommandQueue.hasPendingCommands()
         URLRouter.processPendingCommands()
+        if !launchedForBackgroundWork {
+            showSettingsWindow()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -61,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettingsWindow() {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
             NSApp.windows.first?.makeKeyAndOrderFront(nil)
         }
     }

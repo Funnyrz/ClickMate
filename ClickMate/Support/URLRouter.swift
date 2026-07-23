@@ -21,14 +21,18 @@ enum URLRouter {
         case "processPendingCommands":
             processPendingCommands()
         case "createFile":
-            hideApplicationAfterHandlingBackgroundAction()
+            prepareForBackgroundAction()
             let templateID = queryItems.first { $0.name == "template" }?.value
             createFile(templateID: templateID, directories: urls)
-            hideApplicationAfterHandlingBackgroundAction()
+            keepApplicationHidden()
         case "toggleHiddenFiles":
+            prepareForBackgroundAction()
             toggleHiddenFiles()
+            keepApplicationHidden()
         case "compress":
+            prepareForBackgroundAction()
             urls.forEach { NSWorkspace.shared.open($0) }
+            keepApplicationHidden()
         default:
             break
         }
@@ -38,6 +42,7 @@ enum URLRouter {
         let commands = PendingCommandQueue.drain()
         guard !commands.isEmpty else { return }
         logger.info("Processing \(commands.count, privacy: .public) pending command(s)")
+        prepareForBackgroundAction()
 
         for command in commands {
             switch command.kind {
@@ -49,9 +54,13 @@ enum URLRouter {
                 openHere(command: command.menuCommand, directory: command.directoryURL)
             case .openApplication:
                 openApplication(command: command.menuCommand, applicationPath: command.applicationPath, urls: command.urls)
+            case .compress:
+                command.urls.forEach { NSWorkspace.shared.open($0) }
+            case .toggleHiddenFiles:
+                toggleHiddenFiles()
             }
         }
-        hideApplicationAfterHandlingBackgroundAction()
+        keepApplicationHidden()
     }
 
     private static func shouldHandle(_ url: URL) -> Bool {
@@ -63,8 +72,14 @@ enum URLRouter {
         return true
     }
 
-    private static func hideApplicationAfterHandlingBackgroundAction() {
+    private static func prepareForBackgroundAction() {
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.hide(nil)
+    }
+
+    private static func keepApplicationHidden() {
         DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
             NSApp.hide(nil)
         }
     }
@@ -128,15 +143,7 @@ enum URLRouter {
             return
         }
 
-        let opened: Bool
-        switch command {
-        case .openTerminal:
-            opened = AppLauncher.openTerminal(at: directory)
-        case .openITerm:
-            opened = AppLauncher.openBundle(identifier: "com.googlecode.iterm2", with: [directory])
-        default:
-            opened = false
-        }
+        let opened = AppLauncher.openHere(command: command, directory: directory)
 
         opened
             ? ActionNotifier.notify(titleKey: "notification.successTitle", bodyKey: "notification.opened")
@@ -149,25 +156,11 @@ enum URLRouter {
             return
         }
 
-        let opened: Bool
-        if let applicationPath {
-            opened = AppLauncher.openPinnedApplication(path: applicationPath, with: urls)
-        } else if let command {
-            switch command {
-            case .openVSCode:
-                opened = AppLauncher.openBundle(identifier: "com.microsoft.VSCode", with: urls)
-            case .openCursor:
-                opened = AppLauncher.openBundle(identifier: "com.todesktop.230313mzl4w4u92", with: urls)
-            case .openBBEdit:
-                opened = AppLauncher.openBundle(identifier: "com.barebones.bbedit", with: urls)
-            case .openSublime:
-                opened = AppLauncher.openBundle(identifier: "com.sublimetext.4", with: urls)
-            default:
-                opened = false
-            }
-        } else {
-            opened = false
-        }
+        let opened = AppLauncher.openApplication(
+            command: command,
+            applicationPath: applicationPath,
+            urls: urls
+        )
 
         opened
             ? ActionNotifier.notify(titleKey: "notification.successTitle", bodyKey: "notification.opened")

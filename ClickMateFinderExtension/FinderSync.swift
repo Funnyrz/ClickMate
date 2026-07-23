@@ -643,7 +643,8 @@ class FinderSync: FIFinderSync {
             }
         case .compress:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            AppLauncher.openContainingApp(action: "compress", urls: context.actionURLs)
+            PendingCommandQueue.enqueue(.compress(urls: context.actionURLs))
+            AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
                 ? notifySuccess("notification.completed")
                 : notifyFailure("notification.actionFailed")
         case .metadata:
@@ -657,7 +658,8 @@ class FinderSync: FIFinderSync {
                 ? notifySuccess("notification.copied")
                 : notifyFailure("notification.actionFailed")
         case .toggleHiddenFiles:
-            AppLauncher.openContainingApp(action: "toggleHiddenFiles", urls: [])
+            PendingCommandQueue.enqueue(.toggleHiddenFiles())
+            AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
                 ? notifySuccess("notification.completed")
                 : notifyFailure("notification.actionFailed")
         case .newFile:
