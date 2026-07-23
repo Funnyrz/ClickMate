@@ -26,7 +26,16 @@
 "permissions.title" = "权限";
 "permissions.description" = "请启用访达扩展，然后授予完全磁盘访问权限；也可以手动添加部分文件夹作为备用授权。";
 "permissions.openExtensions" = "打开登录项与扩展";
+"permissions.openLoginItems" = "打开登录项";
 "permissions.openFullDiskAccess" = "打开完全磁盘访问";
+"permissions.stepLaunchAtLoginTitle" = "开机自启";
+"permissions.launchAtLoginDescription" = "登录 Mac 后自动启动右键大师。";
+"permissions.launchAtLoginToggle" = "登录时启动右键大师";
+"permissions.launchAtLoginEnabled" = "已启用";
+"permissions.launchAtLoginDisabled" = "未启用";
+"permissions.launchAtLoginRequiresApproval" = "需要系统批准";
+"permissions.launchAtLoginUnavailable" = "不可用";
+"permissions.launchAtLoginUpdateFailed" = "无法更新开机自启设置。";
 "permissions.fullDiskAccessGranted" = "已启用完全磁盘访问。";
 "permissions.fullDiskAccessMissing" = "未检测到完全磁盘访问。";
 "permissions.fullDiskAccessDescription" = "开启完全磁盘访问后，右键大师无需逐个添加文件夹即可从访达创建文件。";

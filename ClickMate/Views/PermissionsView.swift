@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 struct PermissionsView: View {
@@ -5,6 +6,7 @@ struct PermissionsView: View {
     @State private var statusMessage = L10n.string("permissions.extensionStatusUnknown")
     @State private var hasFullDiskAccess = DiskAccessPolicy.hasFullDiskAccess()
     @State private var finderExtensionStatus: FinderExtensionStatus = .unknown
+    @State private var launchAtLoginStatus = SMAppService.mainApp.status
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -38,6 +40,26 @@ struct PermissionsView: View {
 
                     permissionStep(
                         number: 2,
+                        titleKey: "permissions.stepLaunchAtLoginTitle",
+                        systemImage: "power",
+                        statusText: launchAtLoginStatus.localizedTitle,
+                        statusIsGood: launchAtLoginStatus == .enabled
+                    ) {
+                        Text(L10n.string("permissions.launchAtLoginDescription"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Toggle(L10n.string("permissions.launchAtLoginToggle"), isOn: launchAtLoginBinding)
+                            .toggleStyle(.switch)
+                            .disabled(!isRunningFromApplications)
+                        if launchAtLoginStatus == .requiresApproval {
+                            Button(L10n.string("permissions.openLoginItems")) {
+                                SMAppService.openSystemSettingsLoginItems()
+                            }
+                        }
+                    }
+
+                    permissionStep(
+                        number: 3,
                         titleKey: "permissions.stepExtensionTitle",
                         systemImage: "puzzlepiece.extension",
                         statusText: finderExtensionStatus.localizedTitle,
@@ -60,7 +82,7 @@ struct PermissionsView: View {
                     }
 
                     permissionStep(
-                        number: 3,
+                        number: 4,
                         titleKey: "permissions.stepDiskAccessTitle",
                         systemImage: "externaldrive.badge.checkmark",
                         statusText: hasFullDiskAccess
@@ -85,7 +107,7 @@ struct PermissionsView: View {
                     }
 
                     permissionStep(
-                        number: 4,
+                        number: 5,
                         titleKey: "permissions.stepManualFoldersTitle",
                         systemImage: "folder.badge.plus",
                         statusText: L10n.string("permissions.manualFoldersStatus", store.preferences.monitoredFolderPaths.count),
@@ -210,6 +232,14 @@ struct PermissionsView: View {
         }
     }
 
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding {
+            launchAtLoginStatus == .enabled || launchAtLoginStatus == .requiresApproval
+        } set: { enabled in
+            updateLaunchAtLogin(enabled: enabled)
+        }
+    }
+
     private func addFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -291,8 +321,22 @@ struct PermissionsView: View {
         NSWorkspace.shared.open(url)
     }
 
+    private func updateLaunchAtLogin(enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            statusMessage = L10n.string("permissions.launchAtLoginUpdateFailed")
+        }
+        launchAtLoginStatus = SMAppService.mainApp.status
+    }
+
     private func refreshPermissionStatuses() {
         hasFullDiskAccess = DiskAccessPolicy.hasFullDiskAccess()
+        launchAtLoginStatus = SMAppService.mainApp.status
         Task {
             let status = await FinderExtensionPolicy.status()
             await MainActor.run {
@@ -316,6 +360,23 @@ private extension FinderExtensionStatus {
             return L10n.string("permissions.extensionNotRegistered")
         case .unknown:
             return L10n.string("permissions.extensionUnknown")
+        }
+    }
+}
+
+private extension SMAppService.Status {
+    var localizedTitle: String {
+        switch self {
+        case .enabled:
+            return L10n.string("permissions.launchAtLoginEnabled")
+        case .notRegistered:
+            return L10n.string("permissions.launchAtLoginDisabled")
+        case .requiresApproval:
+            return L10n.string("permissions.launchAtLoginRequiresApproval")
+        case .notFound:
+            return L10n.string("permissions.launchAtLoginUnavailable")
+        @unknown default:
+            return L10n.string("permissions.launchAtLoginUnavailable")
         }
     }
 }

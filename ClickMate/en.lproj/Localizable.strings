@@ -26,7 +26,16 @@
 "permissions.title" = "Permissions";
 "permissions.description" = "Enable the Finder extension, then grant Full Disk Access or add individual folders as a fallback.";
 "permissions.openExtensions" = "Open Login Items & Extensions";
+"permissions.openLoginItems" = "Open Login Items";
 "permissions.openFullDiskAccess" = "Open Full Disk Access";
+"permissions.stepLaunchAtLoginTitle" = "Launch at Login";
+"permissions.launchAtLoginDescription" = "Start ClickMate automatically after you sign in.";
+"permissions.launchAtLoginToggle" = "Launch ClickMate at login";
+"permissions.launchAtLoginEnabled" = "Enabled";
+"permissions.launchAtLoginDisabled" = "Disabled";
+"permissions.launchAtLoginRequiresApproval" = "Approval required";
+"permissions.launchAtLoginUnavailable" = "Unavailable";
+"permissions.launchAtLoginUpdateFailed" = "Could not update the launch-at-login setting.";
 "permissions.fullDiskAccessGranted" = "Full Disk Access is enabled.";
 "permissions.fullDiskAccessMissing" = "Full Disk Access is not detected.";
 "permissions.fullDiskAccessDescription" = "With Full Disk Access, ClickMate can create files from Finder without adding each folder first.";
