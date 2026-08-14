@@ -11,19 +11,21 @@ DMG_ROOT="$BUILD_DIR/dmg-root"
 OUTPUT_DIR="$BUILD_DIR/dist"
 APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/ClickMate.app"
 PACKAGED_APP="$DMG_ROOT/ClickMate.app"
-DMG_PATH="$OUTPUT_DIR/ClickMate-unsigned.dmg"
+ARCHITECTURES=(arm64 x86_64)
 
 echo "==> Cleaning package output"
 rm -rf "$DERIVED_DATA" "$DMG_ROOT" "$OUTPUT_DIR"
 mkdir -p "$DMG_ROOT" "$OUTPUT_DIR"
 
-echo "==> Building unsigned Release app"
+echo "==> Building unsigned Universal 2 Release app"
 xcodebuild build \
   -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
-  -destination 'platform=macOS' \
+  -destination 'generic/platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
+  ARCHS="${ARCHITECTURES[*]}" \
+  ONLY_ACTIVE_ARCH=NO \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGN_IDENTITY="" \
   AD_HOC_CODE_SIGNING_ALLOWED=NO
@@ -32,6 +34,40 @@ if [[ ! -d "$APP_PATH" ]]; then
   echo "error: expected app was not created at $APP_PATH" >&2
   exit 1
 fi
+
+APP_INFO_PLIST="$APP_PATH/Contents/Info.plist"
+EXTENSION_INFO_PLIST="$APP_PATH/Contents/PlugIns/ClickMateFinderExtension.appex/Contents/Info.plist"
+APP_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP_INFO_PLIST")"
+EXTENSION_VERSION="$(plutil -extract CFBundleShortVersionString raw "$EXTENSION_INFO_PLIST")"
+
+if [[ "$APP_VERSION" != "$EXTENSION_VERSION" ]]; then
+  echo "error: app version ($APP_VERSION) does not match Finder extension version ($EXTENSION_VERSION)" >&2
+  exit 1
+fi
+
+DMG_PATH="$OUTPUT_DIR/ClickMate-$APP_VERSION-universal-unsigned.dmg"
+echo "==> Packaging ClickMate $APP_VERSION"
+
+echo "==> Verifying Universal 2 architectures"
+BINARIES=(
+  "$APP_PATH/Contents/MacOS/ClickMate"
+  "$APP_PATH/Contents/PlugIns/ClickMateFinderExtension.appex/Contents/MacOS/ClickMateFinderExtension"
+)
+
+for binary in "${BINARIES[@]}"; do
+  if [[ ! -f "$binary" ]]; then
+    echo "error: expected executable was not created at $binary" >&2
+    exit 1
+  fi
+
+  if ! lipo "$binary" -verify_arch "${ARCHITECTURES[@]}"; then
+    echo "error: executable is not Universal 2: $binary" >&2
+    lipo -archs "$binary" >&2 || true
+    exit 1
+  fi
+
+  echo "    $(basename "$binary"): $(lipo -archs "$binary")"
+done
 
 echo "==> Preparing DMG contents"
 ditto "$APP_PATH" "$PACKAGED_APP"

@@ -6,7 +6,7 @@
 "menu.hash" = "哈希";
 "menu.fileUtilities" = "文件工具";
 "menu.advanced" = "高级";
-"menu.defaultAction" = "默认：%@";
+"menu.newFileShortcut" = "新建 %@";
 
 "command.newFile" = "新建文件";
 "command.copyPOSIXPath" = "复制 POSIX 路径";

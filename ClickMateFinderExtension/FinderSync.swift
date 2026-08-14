@@ -126,18 +126,9 @@ class FinderSync: FIFinderSync {
     private func appendNewFileMenu(to menu: NSMenu, context: FinderContext) {
         guard isEnabled(.newFile), context.destinationDirectory != nil else { return }
         let templates = store.preferences.templates
-        guard let defaultTemplate = templates.first else { return }
+        guard !templates.isEmpty else { return }
 
         let submenu = NSMenu(title: L10n.string("menu.newFile"))
-        submenu.addItem(actionItem(
-            title: defaultActionTitle(defaultTemplate.localizedDisplayName),
-            token: .template(defaultTemplate.id),
-            context: context,
-            isEnabled: true,
-            image: templateIcon()
-        ))
-        submenu.addItem(.separator())
-
         for template in templates {
             submenu.addItem(actionItem(
                 title: template.localizedDisplayName,
@@ -201,14 +192,37 @@ class FinderSync: FIFinderSync {
         for group in allGroups {
             if placement.foldedGroups.contains(group) {
                 guard !didAddFoldedParent else { continue }
+                for foldedGroup in placement.foldedGroups {
+                    appendTopLevelShortcuts(for: foldedGroup, to: menu, context: context)
+                }
                 addClickMateSubmenu(groups: placement.foldedGroups, to: menu, context: context)
                 didAddFoldedParent = true
             } else {
+                appendTopLevelShortcuts(for: group, to: menu, context: context)
                 appendMenuGroup(group, to: menu, context: context)
             }
         }
 
         appendPinnedMenu(to: menu, context: context)
+    }
+
+    private func appendTopLevelShortcuts(for group: MenuCommandGroup, to menu: NSMenu, context: FinderContext) {
+        if group == .newFile {
+            for template in MenuLayoutPolicy.selectedShortcutTemplates(for: store.preferences) {
+                menu.addItem(actionItem(
+                    title: L10n.string("menu.newFileShortcut", template.localizedDisplayName),
+                    token: .template(template.id),
+                    context: context,
+                    isEnabled: context.destinationDirectory != nil,
+                    image: templateIcon()
+                ))
+            }
+            return
+        }
+
+        for command in MenuLayoutPolicy.selectedShortcutCommands(for: group, preferences: store.preferences) {
+            menu.addItem(commandItem(command, context: context))
+        }
     }
 
     private func addClickMateSubmenu(groups: [MenuCommandGroup], to menu: NSMenu, context: FinderContext) {
@@ -260,18 +274,10 @@ class FinderSync: FIFinderSync {
     }
 
     private func appendCommandSubmenu(title: String, group: MenuCommandGroup, commands: [MenuCommand], to menu: NSMenu, context: FinderContext) {
-        let visibleCommands = commands
-        guard !visibleCommands.isEmpty else { return }
+        guard !commands.isEmpty else { return }
 
         let submenu = NSMenu(title: title)
-        if let defaultCommand = group.defaultCommand.flatMap({ defaultCommand in
-            visibleCommands.first { $0 == defaultCommand }
-        }) ?? visibleCommands.first {
-            submenu.addItem(commandItem(defaultCommand, context: context, usesDefaultTitle: true))
-            submenu.addItem(.separator())
-        }
-
-        for command in visibleCommands {
+        for command in commands {
             submenu.addItem(commandItem(command, context: context))
         }
         addSubmenu(title: title, submenu: submenu, to: menu, image: groupIcon(group))
@@ -289,9 +295,9 @@ class FinderSync: FIFinderSync {
         menu.addItem(item)
     }
 
-    private func commandItem(_ command: MenuCommand, context: FinderContext, usesDefaultTitle: Bool = false) -> NSMenuItem {
+    private func commandItem(_ command: MenuCommand, context: FinderContext) -> NSMenuItem {
         actionItem(
-            title: usesDefaultTitle ? defaultActionTitle(command.title) : command.title,
+            title: command.title,
             token: .command(command),
             context: context,
             isEnabled: isCommandEnabled(command, context: context),
@@ -299,10 +305,10 @@ class FinderSync: FIFinderSync {
         )
     }
 
-    private func pinnedApplicationItem(path: String, context: FinderContext, usesDefaultTitle: Bool = false) -> NSMenuItem {
+    private func pinnedApplicationItem(path: String, context: FinderContext) -> NSMenuItem {
         let title = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
         return actionItem(
-            title: usesDefaultTitle ? defaultActionTitle(title) : title,
+            title: title,
             token: .pinnedApplication(path),
             context: context,
             isEnabled: !context.actionURLs.isEmpty,
@@ -472,10 +478,6 @@ class FinderSync: FIFinderSync {
         }
     }
 
-    private func defaultActionTitle(_ title: String) -> String {
-        L10n.string("menu.defaultAction", title)
-    }
-
     private func isEnabled(_ command: MenuCommand) -> Bool {
         store.preferences.enabledCommands.contains(command)
     }
@@ -531,27 +533,23 @@ class FinderSync: FIFinderSync {
             return .template(template.id)
         }
 
-        let defaultPrefix = defaultActionPrefix()
-        let titleWithoutDefaultPrefix: String
-        if normalizedTitle.hasPrefix(defaultPrefix) {
-            titleWithoutDefaultPrefix = String(normalizedTitle.dropFirst(defaultPrefix.count))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            titleWithoutDefaultPrefix = normalizedTitle
-        }
+        let shortcutPrefix = newFileShortcutPrefix()
+        let templateTitle = normalizedTitle.hasPrefix(shortcutPrefix)
+            ? String(normalizedTitle.dropFirst(shortcutPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            : normalizedTitle
 
         if let template = store.preferences.templates.first(where: { template in
-            template.localizedDisplayName == titleWithoutDefaultPrefix || template.displayName == titleWithoutDefaultPrefix
+            template.localizedDisplayName == templateTitle || template.displayName == templateTitle
         }) {
             return .template(template.id)
         }
 
-        if let command = MenuCommand.allCases.first(where: { $0.title == titleWithoutDefaultPrefix }) {
+        if let command = MenuCommand.allCases.first(where: { $0.title == normalizedTitle }) {
             return .command(command)
         }
 
         if let pinnedPath = store.preferences.pinnedApplicationPaths.first(where: { path in
-            URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent == titleWithoutDefaultPrefix
+            URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent == normalizedTitle
         }) {
             return .pinnedApplication(pinnedPath)
         }
@@ -559,9 +557,9 @@ class FinderSync: FIFinderSync {
         return nil
     }
 
-    private func defaultActionPrefix() -> String {
-        let marker = "__CLICKMATE_DEFAULT_ACTION_MARKER__"
-        let localized = defaultActionTitle(marker)
+    private func newFileShortcutPrefix() -> String {
+        let marker = "__CLICKMATE_TEMPLATE_MARKER__"
+        let localized = L10n.string("menu.newFileShortcut", marker)
         guard let range = localized.range(of: marker) else { return "" }
         return String(localized[..<range.lowerBound])
     }

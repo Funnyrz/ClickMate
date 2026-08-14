@@ -220,22 +220,4 @@ enum MenuCommandGroup: String, Codable, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var defaultCommand: MenuCommand? {
-        switch self {
-        case .newFile:
-            return .newFile
-        case .copy:
-            return .copyPOSIXPath
-        case .openHere:
-            return .openTerminal
-        case .openPinned:
-            return nil
-        case .hash:
-            return .sha256
-        case .fileUtilities:
-            return .revealParent
-        case .advanced:
-            return .metadata
-        }
-    }
 }

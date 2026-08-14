@@ -88,16 +88,6 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertNil(FinderCommandToken(rawValue: "bogus:value"))
     }
 
-    func testMenuCommandGroupsExposeExpectedDefaultActions() {
-        XCTAssertEqual(MenuCommandGroup.newFile.defaultCommand, .newFile)
-        XCTAssertEqual(MenuCommandGroup.copy.defaultCommand, .copyPOSIXPath)
-        XCTAssertEqual(MenuCommandGroup.openHere.defaultCommand, .openTerminal)
-        XCTAssertNil(MenuCommandGroup.openPinned.defaultCommand)
-        XCTAssertEqual(MenuCommandGroup.hash.defaultCommand, .sha256)
-        XCTAssertEqual(MenuCommandGroup.fileUtilities.defaultCommand, .revealParent)
-        XCTAssertEqual(MenuCommandGroup.advanced.defaultCommand, .metadata)
-    }
-
     func testMenuCommandGroupsMapCommandsToSubmenus() {
         XCTAssertEqual(MenuCommandGroup.group(for: .newFile), .newFile)
         XCTAssertEqual(MenuCommandGroup.group(for: .copyFileURL), .copy)
@@ -157,6 +147,8 @@ final class ClickMateCoreTests: XCTestCase {
             "layout.foldIntoApp",
             "layout.statusFolded",
             "layout.statusTopLevel",
+            "layout.topLevelShortcut",
+            "menu.newFileShortcut",
             "permissions.openFullDiskAccess",
             "permissions.fullDiskAccessGranted",
             "permissions.fullDiskAccessMissing",
@@ -498,6 +490,8 @@ final class ClickMateCoreTests: XCTestCase {
             enabledCommands: [.copyPOSIXPath],
             menuCommandOrder: [.md5, .copyPOSIXPath, .newFile],
             foldedMenuGroups: [.copy, .hash],
+            topLevelShortcutCommands: [.copyPOSIXPath, .md5],
+            topLevelShortcutTemplateIDs: ["custom-b"],
             removedMenuCommands: [.newFile],
             templates: templates,
             monitoringMode: .wideCoverage,
@@ -516,6 +510,8 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(Array(reloaded.preferences.orderedMenuCommands.prefix(3)), [.md5, .copyPOSIXPath, .copyFileURL])
         XCTAssertEqual(reloaded.preferences.enabledMenuCommandsInCustomOrder, [.copyPOSIXPath])
         XCTAssertEqual(reloaded.preferences.foldedMenuGroups, [.copy, .hash])
+        XCTAssertEqual(reloaded.preferences.topLevelShortcutCommands, [.copyPOSIXPath, .md5])
+        XCTAssertEqual(reloaded.preferences.topLevelShortcutTemplateIDs, ["custom-b"])
         XCTAssertEqual(reloaded.preferences.removedMenuCommands, [.newFile])
         XCTAssertEqual(reloaded.preferences.templates.map(\.id), ["custom-a", "custom-b"])
         XCTAssertEqual(reloaded.preferences.monitoredFolderPaths, [secondFolder.path, folder.path])
@@ -572,6 +568,8 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertTrue(preferences.removedMenuCommands.isEmpty)
         XCTAssertEqual(preferences.detectedApplicationOrder, AppDetector.defaultApplicationOrder)
         XCTAssertTrue(preferences.removedDetectedApplicationBundleIDs.isEmpty)
+        XCTAssertTrue(preferences.topLevelShortcutCommands.isEmpty)
+        XCTAssertTrue(preferences.topLevelShortcutTemplateIDs.isEmpty)
     }
 
     func testMenuLayoutDefaultsToTopLevelGroups() throws {
@@ -681,6 +679,61 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(preferences.enabledMenuCommandsInCustomOrder, [.md5, .copyPOSIXPath, .sha256])
     }
 
+    func testMenuLayoutOrdersAndFiltersTopLevelShortcuts() throws {
+        let templates = [
+            FileTemplate(id: "first", displayName: "First", fileExtension: "one", defaultBasename: "Untitled", contents: ""),
+            FileTemplate(id: "second", displayName: "Second", fileExtension: "two", defaultBasename: "Untitled", contents: "")
+        ]
+        var preferences = ClickMatePreferences(
+            enabledCommands: [.newFile, .copyPOSIXPath, .copyFileURL, .sha256, .md5, .openTerminal, .openVSCode],
+            menuCommandOrder: [.md5, .copyFileURL, .sha256, .copyPOSIXPath],
+            topLevelShortcutCommands: [.md5, .copyPOSIXPath, .copyFileURL, .openTerminal, .openVSCode],
+            topLevelShortcutTemplateIDs: ["second", "missing", "first"],
+            templates: templates,
+            monitoredFolderPaths: [],
+            detectedApplicationOrder: ["com.microsoft.VSCode", "com.apple.Terminal"],
+            pinnedApplicationPaths: []
+        )
+
+        XCTAssertEqual(MenuLayoutPolicy.selectedShortcutCommands(for: .copy, preferences: preferences), [.copyFileURL, .copyPOSIXPath])
+        XCTAssertEqual(MenuLayoutPolicy.selectedShortcutCommands(for: .hash, preferences: preferences), [.md5])
+        XCTAssertEqual(MenuLayoutPolicy.selectedShortcutCommands(for: .openHere, preferences: preferences), [.openVSCode, .openTerminal])
+        XCTAssertEqual(MenuLayoutPolicy.selectedShortcutTemplates(for: preferences).map(\.id), ["first", "second"])
+
+        preferences.enabledCommands.remove(.copyFileURL)
+        XCTAssertEqual(MenuLayoutPolicy.selectedShortcutCommands(for: .copy, preferences: preferences), [.copyPOSIXPath])
+        XCTAssertTrue(preferences.topLevelShortcutCommands.contains(.copyFileURL))
+    }
+
+    func testRemovingShortcutItemsClearsPersistedSelections() throws {
+        var preferences = ClickMatePreferences(
+            enabledCommands: [.newFile, .copyPOSIXPath],
+            topLevelShortcutCommands: [.copyPOSIXPath],
+            topLevelShortcutTemplateIDs: ["custom"],
+            templates: [
+                FileTemplate(id: "custom", displayName: "Custom", fileExtension: "log", defaultBasename: "Untitled", contents: "")
+            ],
+            monitoredFolderPaths: [],
+            pinnedApplicationPaths: []
+        )
+
+        preferences.removeMenuCommand(.copyPOSIXPath)
+        preferences.removeTemplate(id: "custom")
+
+        XCTAssertFalse(preferences.topLevelShortcutCommands.contains(.copyPOSIXPath))
+        XCTAssertFalse(preferences.topLevelShortcutTemplateIDs.contains("custom"))
+        XCTAssertTrue(preferences.templates.isEmpty)
+
+        preferences.topLevelShortcutTemplateIDs = ["restored"]
+        preferences.removeMenuCommand(.newFile)
+        XCTAssertTrue(preferences.topLevelShortcutTemplateIDs.isEmpty)
+    }
+
+    func testNewFileShortcutTitleUsesExplicitLanguage() {
+        XCTAssertEqual(L10n.string("menu.newFileShortcut", language: .english), "New %@")
+        XCTAssertEqual(L10n.string("menu.newFileShortcut", language: .simplifiedChinese), "新建 %@")
+    }
+
     func testRemovedMenuCommandsAreExcludedFromSettingsAndVisibleGroups() throws {
         var preferences = ClickMatePreferences(
             enabledCommands: [.newFile, .copyPOSIXPath, .copyFileURL],
@@ -718,6 +771,7 @@ final class ClickMateCoreTests: XCTestCase {
     func testRemovedDetectedApplicationsAreExcludedFromOpenCommands() throws {
         var preferences = ClickMatePreferences(
             enabledCommands: [.openTerminal, .openVSCode, .openCursor],
+            topLevelShortcutCommands: [.openVSCode],
             templates: [],
             monitoredFolderPaths: [],
             detectedApplicationOrder: [
@@ -732,6 +786,7 @@ final class ClickMateCoreTests: XCTestCase {
 
         XCTAssertFalse(preferences.orderedDetectedApplicationBundleIDs.contains("com.microsoft.VSCode"))
         XCTAssertFalse(preferences.enabledCommands.contains(.openVSCode))
+        XCTAssertFalse(preferences.topLevelShortcutCommands.contains(.openVSCode))
         XCTAssertEqual(preferences.enabledOpenApplicationCommandsInCustomOrder, [.openCursor, .openTerminal])
     }
 

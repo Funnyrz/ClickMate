@@ -5,6 +5,7 @@
 
 "menus.title" = "访达菜单";
 "menus.description" = "选择要显示在访达右键大师右键菜单中的命令。";
+"layout.topLevelShortcut" = "显示为一级快捷操作";
 "button.enableAll" = "全部启用";
 "button.resetDefaults" = "恢复默认";
 "button.refresh" = "刷新";
@@ -62,7 +63,7 @@
 "menu.hash" = "哈希";
 "menu.fileUtilities" = "文件工具";
 "menu.advanced" = "高级";
-"menu.defaultAction" = "默认：%@";
+"menu.newFileShortcut" = "新建 %@";
 
 "command.newFile" = "新建文件";
 "command.copyPOSIXPath" = "复制 POSIX 路径";

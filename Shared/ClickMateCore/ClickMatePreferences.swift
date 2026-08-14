@@ -9,6 +9,8 @@ struct ClickMatePreferences: Codable, Equatable {
     var enabledCommands: Set<MenuCommand>
     var menuCommandOrder: [MenuCommand]
     var foldedMenuGroups: Set<MenuCommandGroup>
+    var topLevelShortcutCommands: Set<MenuCommand>
+    var topLevelShortcutTemplateIDs: Set<String>
     var removedMenuCommands: Set<MenuCommand>
     var templates: [FileTemplate]
     var monitoringMode: MonitoringMode
@@ -25,6 +27,8 @@ struct ClickMatePreferences: Codable, Equatable {
         enabledCommands: Set<MenuCommand>,
         menuCommandOrder: [MenuCommand] = MenuCommand.allCases,
         foldedMenuGroups: Set<MenuCommandGroup> = MenuCommandGroup.defaultFoldedGroups,
+        topLevelShortcutCommands: Set<MenuCommand> = [],
+        topLevelShortcutTemplateIDs: Set<String> = [],
         removedMenuCommands: Set<MenuCommand> = [],
         templates: [FileTemplate],
         monitoringMode: MonitoringMode = .wideCoverage,
@@ -41,6 +45,8 @@ struct ClickMatePreferences: Codable, Equatable {
         self.enabledCommands = enabledCommands.subtracting(removedMenuCommands)
         self.menuCommandOrder = Self.normalizedMenuCommandOrder(menuCommandOrder)
         self.foldedMenuGroups = foldedMenuGroups
+        self.topLevelShortcutCommands = topLevelShortcutCommands.subtracting(removedMenuCommands)
+        self.topLevelShortcutTemplateIDs = topLevelShortcutTemplateIDs
         self.templates = templates
         self.monitoringMode = monitoringMode
         self.monitoredFolderPaths = monitoredFolderPaths
@@ -59,6 +65,8 @@ struct ClickMatePreferences: Codable, Equatable {
         enabledCommands: Set(MenuCommand.allCases),
         menuCommandOrder: MenuCommand.allCases,
         foldedMenuGroups: MenuCommandGroup.defaultFoldedGroups,
+        topLevelShortcutCommands: [],
+        topLevelShortcutTemplateIDs: [],
         removedMenuCommands: [],
         templates: FileTemplate.defaults,
         monitoringMode: .wideCoverage,
@@ -123,6 +131,15 @@ struct ClickMatePreferences: Codable, Equatable {
     mutating func removeMenuCommand(_ command: MenuCommand) {
         removedMenuCommands.insert(command)
         enabledCommands.remove(command)
+        topLevelShortcutCommands.remove(command)
+        if command == .newFile {
+            topLevelShortcutTemplateIDs.removeAll()
+        }
+    }
+
+    mutating func removeTemplate(id: String) {
+        templates.removeAll { $0.id == id }
+        topLevelShortcutTemplateIDs.remove(id)
     }
 
     mutating func removeDetectedApplication(bundleIdentifier: String) {
@@ -130,6 +147,7 @@ struct ClickMatePreferences: Codable, Equatable {
         removedDetectedApplicationBundleIDs.insert(bundleIdentifier)
         if let command = MenuCommand.openApplicationCommand(forBundleIdentifier: bundleIdentifier) {
             enabledCommands.remove(command)
+            topLevelShortcutCommands.remove(command)
         }
     }
 
@@ -145,6 +163,8 @@ struct ClickMatePreferences: Codable, Equatable {
         case enabledCommands
         case menuCommandOrder
         case foldedMenuGroups
+        case topLevelShortcutCommands
+        case topLevelShortcutTemplateIDs
         case removedMenuCommands
         case templates
         case monitoringMode
@@ -165,8 +185,11 @@ struct ClickMatePreferences: Codable, Equatable {
             try container.decodeIfPresent([MenuCommand].self, forKey: .menuCommandOrder) ?? MenuCommand.allCases
         )
         foldedMenuGroups = try container.decodeIfPresent(Set<MenuCommandGroup>.self, forKey: .foldedMenuGroups) ?? MenuCommandGroup.defaultFoldedGroups
+        topLevelShortcutCommands = try container.decodeIfPresent(Set<MenuCommand>.self, forKey: .topLevelShortcutCommands) ?? []
+        topLevelShortcutTemplateIDs = try container.decodeIfPresent(Set<String>.self, forKey: .topLevelShortcutTemplateIDs) ?? []
         removedMenuCommands = try container.decodeIfPresent(Set<MenuCommand>.self, forKey: .removedMenuCommands) ?? []
         enabledCommands.subtract(removedMenuCommands)
+        topLevelShortcutCommands.subtract(removedMenuCommands)
         templates = try container.decode([FileTemplate].self, forKey: .templates)
         monitoringMode = try container.decodeIfPresent(MonitoringMode.self, forKey: .monitoringMode) ?? .wideCoverage
         monitoredFolderPaths = try container.decodeIfPresent([String].self, forKey: .monitoredFolderPaths) ?? []
@@ -229,6 +252,43 @@ enum MenuLayoutPolicy {
             topLevelGroups: groups.filter { !preferences.foldedMenuGroups.contains($0) },
             foldedGroups: groups.filter { preferences.foldedMenuGroups.contains($0) }
         )
+    }
+
+    static func shortcutCommandCandidates(
+        for group: MenuCommandGroup,
+        preferences: ClickMatePreferences
+    ) -> [MenuCommand] {
+        switch group {
+        case .newFile, .openPinned:
+            return []
+        case .openHere:
+            return preferences.enabledOpenApplicationCommandsInCustomOrder
+        default:
+            let groupCommands = Set(group.commands)
+            return preferences.enabledMenuCommandsInCustomOrder.filter { groupCommands.contains($0) }
+        }
+    }
+
+    static func selectedShortcutCommands(
+        for group: MenuCommandGroup,
+        preferences: ClickMatePreferences
+    ) -> [MenuCommand] {
+        shortcutCommandCandidates(for: group, preferences: preferences)
+            .filter { preferences.topLevelShortcutCommands.contains($0) }
+    }
+
+    static func shortcutTemplateCandidates(for preferences: ClickMatePreferences) -> [FileTemplate] {
+        guard preferences.enabledCommands.contains(.newFile),
+              !preferences.removedMenuCommands.contains(.newFile)
+        else {
+            return []
+        }
+        return preferences.templates
+    }
+
+    static func selectedShortcutTemplates(for preferences: ClickMatePreferences) -> [FileTemplate] {
+        shortcutTemplateCandidates(for: preferences)
+            .filter { preferences.topLevelShortcutTemplateIDs.contains($0.id) }
     }
 
 }

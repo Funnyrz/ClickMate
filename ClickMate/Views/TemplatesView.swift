@@ -19,12 +19,15 @@ struct TemplatesView: View {
                         Text(".\(template.fileExtension)")
                             .foregroundStyle(.secondary)
                         RemoveButton {
-                            store.preferences.templates.removeAll { $0.id == template.id }
+                            store.preferences.removeTemplate(id: template.id)
                         }
                     }
                 }
                 .onDelete { offsets in
-                    store.preferences.templates.remove(atOffsets: offsets)
+                    let templateIDs = offsets.map { store.preferences.templates[$0].id }
+                    for templateID in templateIDs {
+                        store.preferences.removeTemplate(id: templateID)
+                    }
                 }
                 .onMove { source, destination in
                     store.preferences.templates.move(fromOffsets: source, toOffset: destination)

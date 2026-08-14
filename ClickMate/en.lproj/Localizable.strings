@@ -5,6 +5,7 @@
 
 "menus.title" = "Finder Menu";
 "menus.description" = "Enable the commands that should appear under the ClickMate submenu in Finder.";
+"layout.topLevelShortcut" = "Top-level shortcut";
 "button.enableAll" = "Enable All";
 "button.resetDefaults" = "Reset Defaults";
 "button.refresh" = "Refresh";
@@ -62,7 +63,7 @@
 "menu.hash" = "Hash";
 "menu.fileUtilities" = "File Utilities";
 "menu.advanced" = "Advanced";
-"menu.defaultAction" = "Default: %@";
+"menu.newFileShortcut" = "New %@";
 
 "command.newFile" = "New File";
 "command.copyPOSIXPath" = "Copy POSIX Path";
