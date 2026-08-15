@@ -13,6 +13,14 @@ APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/ClickMate.app"
 PACKAGED_APP="$DMG_ROOT/ClickMate.app"
 ARCHITECTURES=(arm64 x86_64)
 
+SOURCE_APP_VERSION="$(plutil -extract CFBundleShortVersionString raw "$ROOT_DIR/ClickMate/Info.plist")"
+SOURCE_EXTENSION_VERSION="$(plutil -extract CFBundleShortVersionString raw "$ROOT_DIR/ClickMateFinderExtension/Info.plist")"
+
+if [[ "$SOURCE_APP_VERSION" != "$SOURCE_EXTENSION_VERSION" ]]; then
+  echo "error: app version ($SOURCE_APP_VERSION) does not match Finder extension version ($SOURCE_EXTENSION_VERSION)" >&2
+  exit 1
+fi
+
 echo "==> Cleaning package output"
 rm -rf "$DERIVED_DATA" "$DMG_ROOT" "$OUTPUT_DIR"
 mkdir -p "$DMG_ROOT" "$OUTPUT_DIR"

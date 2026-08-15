@@ -5,15 +5,20 @@ import SwiftUI
 struct ClickMateApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = PreferencesStore()
+    @StateObject private var updateCoordinator = UpdateCheckCoordinator()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(updateCoordinator)
                 .frame(width: 760, height: 520)
                 .fixedSize()
                 .onOpenURL { url in
                     URLRouter.handle(url)
+                }
+                .task {
+                    await updateCoordinator.checkAutomaticallyIfNeeded()
                 }
         }
         .windowStyle(.titleBar)

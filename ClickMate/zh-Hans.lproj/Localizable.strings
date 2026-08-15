@@ -112,3 +112,19 @@
 "notification.noSelection" = "没有选择访达项目。";
 "notification.openFailed" = "无法打开目标。";
 "notification.actionFailed" = "无法完成此操作。";
+
+"update.check" = "检查更新";
+"update.checking" = "正在检查...";
+"update.availableInline" = "发现版本 %@";
+"update.alertAvailableTitle" = "发现新版本";
+"update.alertAvailableMessage" = "ClickMate %@ 已发布，当前版本为 %@。";
+"update.alertUpToDateTitle" = "已是最新版本";
+"update.alertUpToDateMessage" = "ClickMate %@ 已是最新版本。";
+"update.alertFailedTitle" = "无法检查更新";
+"update.alertFailedMessage" = "ClickMate 暂时无法访问 GitHub。你可以打开 Releases 页面或稍后重试。";
+"update.openDownload" = "前往下载";
+"update.openReleases" = "打开 Releases";
+"update.later" = "稍后";
+"update.close" = "好";
+"update.notificationTitle" = "ClickMate 有新版本";
+"update.notificationBody" = "ClickMate %@ 已发布，打开 ClickMate 即可前往下载。";

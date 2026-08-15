@@ -68,6 +68,9 @@
 		10000000000000000000003C /* PendingCommandQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000025 /* PendingCommandQueue.swift */; };
 		10000000000000000000003D /* PendingCommandQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000025 /* PendingCommandQueue.swift */; };
 		10000000000000000000003E /* Views/MenuLayoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000026 /* Views/MenuLayoutView.swift */; };
+		10000000000000000000003F /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000027 /* UpdateChecker.swift */; };
+		100000000000000000000040 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000027 /* UpdateChecker.swift */; };
+		100000000000000000000041 /* UpdateCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000028 /* UpdateCheckerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -140,6 +143,8 @@
 		200000000000000000000024 /* ClickMateIconZH.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ClickMateIconZH.icns; sourceTree = "<group>"; };
 		200000000000000000000025 /* PendingCommandQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingCommandQueue.swift; sourceTree = "<group>"; };
 		200000000000000000000026 /* Views/MenuLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuLayoutView.swift; sourceTree = "<group>"; };
+		200000000000000000000027 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
+		200000000000000000000028 /* UpdateCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckerTests.swift; sourceTree = "<group>"; };
 		400000000000000000000001 /* ClickMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000002 /* ClickMateFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClickMateFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000003 /* ClickMateCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClickMateCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -218,6 +223,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000008 /* AppConstants.swift */,
+				200000000000000000000027 /* UpdateChecker.swift */,
 				200000000000000000000020 /* AppLanguage.swift */,
 				200000000000000000000009 /* FileTemplate.swift */,
 				20000000000000000000000A /* MenuCommand.swift */,
@@ -240,6 +246,7 @@
 			isa = PBXGroup;
 			children = (
 				200000000000000000000013 /* ClickMateCoreTests.swift */,
+				200000000000000000000028 /* UpdateCheckerTests.swift */,
 			);
 			path = Tests/ClickMateCoreTests;
 			sourceTree = "<group>";
@@ -383,6 +390,7 @@
 			files = (
 				100000000000000000000001 /* ClickMateApp.swift in Sources */,
 				100000000000000000000002 /* ContentView.swift in Sources */,
+				10000000000000000000003F /* UpdateChecker.swift in Sources */,
 				100000000000000000000003 /* Views/MenusView.swift in Sources */,
 				10000000000000000000003E /* Views/MenuLayoutView.swift in Sources */,
 				100000000000000000000004 /* Views/TemplatesView.swift in Sources */,
@@ -435,6 +443,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				10000000000000000000001D /* ClickMateCoreTests.swift in Sources */,
+				100000000000000000000041 /* UpdateCheckerTests.swift in Sources */,
+				100000000000000000000040 /* UpdateChecker.swift in Sources */,
 				100000000000000000000032 /* AppConstants.swift in Sources */,
 				10000000000000000000002E /* AppLanguage.swift in Sources */,
 				100000000000000000000033 /* ClickMatePreferences.swift in Sources */,

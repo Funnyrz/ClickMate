@@ -65,6 +65,14 @@ killall Finder
 
 Right-click in Desktop, Documents, Downloads, or folders added in ClickMate's Permissions tab.
 
+## Online Updates
+
+ClickMate automatically checks the latest published GitHub Release at most once every 24 hours and compares its tag with the installed app's `CFBundleShortVersionString`. A leading `v` in the release tag is ignored for comparison. Drafts and prereleases are not offered as normal updates. A manual check bypasses the 24-hour interval.
+
+When a newer version is available, ClickMate notifies you once for that version and directs you to a trusted GitHub release page so you can download and replace the app manually. It does not silently download or install updates. Automatic-check failures stay silent; manual checks report failure without preventing the installed app from continuing to work.
+
+Release downloads are currently unsigned and not notarized. macOS Gatekeeper may require explicit approval before the downloaded app can run.
+
 ## Package an Unsigned DMG
 
 The repository includes a helper script for creating a local unsigned DMG:
@@ -74,6 +82,22 @@ Scripts/package_unsigned_dmg.sh
 ```
 
 The generated DMG is not Developer ID signed or notarized. macOS Gatekeeper may block the app on other machines unless the recipient explicitly trusts it or removes the quarantine attribute after copying it to `/Applications`.
+
+## Publish a GitHub Release Locally
+
+Install and authenticate GitHub CLI, and make sure `curl`, `jq`, and the Xcode command-line tools are available. Update `CFBundleShortVersionString` in both `ClickMate/Info.plist` and `ClickMateFinderExtension/Info.plist`, then commit the release changes.
+
+Create and push the release tag yourself before running the release script:
+
+```sh
+git tag -a v1.4 -m "Release v1.4"
+git push origin v1.4
+Scripts/release_github.sh v1.4
+```
+
+The script also accepts `1.4` and normalizes it to `v1.4`. It requires a clean working tree; verifies that both bundle versions match; confirms that the local and `origin` tags both point at `HEAD`; rejects an existing release or a version that is not strictly newer than the latest published GitHub release; runs the unsigned test suite; builds the DMG with `Scripts/package_unsigned_dmg.sh`; mounts it read-only to verify the app, Finder extension, versions, and `arm64` + `x86_64` executables; then creates the GitHub release and uploads the DMG.
+
+`Scripts/release_github.sh` never creates, moves, or pushes tags. The uploaded DMG remains unsigned and not notarized, so release users are subject to the same Gatekeeper limitations described above.
 
 ## Contributing
 

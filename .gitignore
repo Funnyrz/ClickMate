@@ -37,3 +37,4 @@ Carthage/Build/
 # Editor and local agent state
 .vscode/
 .omx/
+Scripts/release_github.sh

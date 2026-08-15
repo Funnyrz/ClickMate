@@ -112,3 +112,19 @@
 "notification.noSelection" = "No Finder item is selected.";
 "notification.openFailed" = "Could not open the target.";
 "notification.actionFailed" = "The action could not be completed.";
+
+"update.check" = "Check for Updates";
+"update.checking" = "Checking...";
+"update.availableInline" = "%@ Available";
+"update.alertAvailableTitle" = "Update Available";
+"update.alertAvailableMessage" = "ClickMate %@ is available. You are using %@.";
+"update.alertUpToDateTitle" = "Up to Date";
+"update.alertUpToDateMessage" = "ClickMate %@ is the latest version.";
+"update.alertFailedTitle" = "Unable to Check for Updates";
+"update.alertFailedMessage" = "ClickMate could not reach GitHub. You can open the Releases page and try again later.";
+"update.openDownload" = "Open Download Page";
+"update.openReleases" = "Open Releases";
+"update.later" = "Later";
+"update.close" = "OK";
+"update.notificationTitle" = "ClickMate Update Available";
+"update.notificationBody" = "ClickMate %@ is available. Open ClickMate to download it.";
