@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PermissionsView: View {
     @EnvironmentObject private var store: PreferencesStore
+    @ObservedObject private var quickPermissionMonitor = QuickFeaturePermissionMonitor.shared
     @State private var statusMessage = L10n.string("permissions.extensionStatusUnknown")
     @State private var hasFullDiskAccess = DiskAccessPolicy.hasFullDiskAccess()
     @State private var finderExtensionStatus: FinderExtensionStatus = .unknown
@@ -78,6 +79,16 @@ struct PermissionsView: View {
                             Button(L10n.string("button.refresh")) {
                                 refreshPermissionStatuses()
                             }
+                            if !hasFullDiskAccess {
+                                Button(L10n.string("permissions.restartApplication")) {
+                                    QuickFeaturePermissions.relaunchApplication()
+                                }
+                            }
+                        }
+                        if !hasFullDiskAccess {
+                            Text(L10n.string("permissions.restartHint"))
+                                .font(.caption)
+                                .foregroundStyle(.orange)
                         }
                     }
 
@@ -108,6 +119,68 @@ struct PermissionsView: View {
 
                     permissionStep(
                         number: 5,
+                        titleKey: "permissions.stepAccessibilityTitle",
+                        systemImage: "keyboard.badge.ellipsis",
+                        statusText: quickPermissionMonitor.snapshot.accessibilityGranted
+                            ? L10n.string("permissions.accessibilityGranted")
+                            : L10n.string("permissions.accessibilityMissing"),
+                        statusIsGood: quickPermissionMonitor.snapshot.accessibilityGranted
+                    ) {
+                        Text(L10n.string("permissions.accessibilityDescription"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button(L10n.string("permissions.requestAccess")) {
+                                QuickFeaturePermissions.requestAccessibilityAccess()
+                                quickPermissionMonitor.refresh()
+                            }
+                            Button(L10n.string("permissions.openAccessibility")) {
+                                QuickFeaturePermissions.openAccessibilitySettings()
+                            }
+                            Button(L10n.string("button.refresh")) {
+                                refreshPermissionStatuses()
+                            }
+                        }
+                    }
+
+                    permissionStep(
+                        number: 6,
+                        titleKey: "permissions.stepScreenRecordingTitle",
+                        systemImage: "rectangle.dashed.badge.record",
+                        statusText: quickPermissionMonitor.snapshot.screenRecordingGranted
+                            ? L10n.string("permissions.screenRecordingGranted")
+                            : L10n.string("permissions.screenRecordingMissing"),
+                        statusIsGood: quickPermissionMonitor.snapshot.screenRecordingGranted
+                    ) {
+                        Text(L10n.string("permissions.screenRecordingDescription"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button(L10n.string("permissions.requestAccess")) {
+                                QuickFeaturePermissions.requestScreenRecordingAccess()
+                                quickPermissionMonitor.refresh()
+                            }
+                            Button(L10n.string("permissions.openScreenRecording")) {
+                                QuickFeaturePermissions.openScreenRecordingSettings()
+                            }
+                            Button(L10n.string("button.refresh")) {
+                                refreshPermissionStatuses()
+                            }
+                            if !quickPermissionMonitor.snapshot.screenRecordingGranted {
+                                Button(L10n.string("permissions.restartApplication")) {
+                                    QuickFeaturePermissions.relaunchApplication()
+                                }
+                            }
+                        }
+                        if !quickPermissionMonitor.snapshot.screenRecordingGranted {
+                            Text(L10n.string("permissions.restartHint"))
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    permissionStep(
+                        number: 7,
                         titleKey: "permissions.stepManualFoldersTitle",
                         systemImage: "folder.badge.plus",
                         statusText: L10n.string("permissions.manualFoldersStatus", store.preferences.monitoredFolderPaths.count),
@@ -130,6 +203,9 @@ struct PermissionsView: View {
             }
         }
         .task {
+            refreshPermissionStatuses()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissionStatuses()
         }
     }
@@ -336,6 +412,7 @@ struct PermissionsView: View {
 
     private func refreshPermissionStatuses() {
         hasFullDiskAccess = DiskAccessPolicy.hasFullDiskAccess()
+        quickPermissionMonitor.refresh()
         launchAtLoginStatus = SMAppService.mainApp.status
         Task {
             let status = await FinderExtensionPolicy.status()

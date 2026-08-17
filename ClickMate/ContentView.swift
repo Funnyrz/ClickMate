@@ -21,6 +21,9 @@ struct ContentView: View {
                 AppsView()
                     .tabItem { Label(L10n.string("tab.apps"), systemImage: "terminal") }
                     .tag(SettingsTab.apps)
+                QuickFeaturesView()
+                    .tabItem { Label(L10n.string("tab.quickFeatures"), systemImage: "bolt.badge.clock") }
+                    .tag(SettingsTab.quickFeatures)
                 PermissionsView()
                     .tabItem { Label(L10n.string("tab.permissions"), systemImage: "checkmark.shield") }
                     .tag(SettingsTab.permissions)
@@ -126,5 +129,6 @@ private enum SettingsTab {
     case layout
     case templates
     case apps
+    case quickFeatures
     case permissions
 }

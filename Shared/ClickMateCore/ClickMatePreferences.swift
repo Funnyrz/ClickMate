@@ -22,6 +22,9 @@ struct ClickMatePreferences: Codable, Equatable {
     var language: AppLanguage
     var hasDismissedPermissionGuide: Bool
     var menuLayoutDefaultsVersion: Int
+    var quickFeatureDefaultsVersion: Int
+    var quickFeatureSettings: [QuickFeatureSettings]
+    var screenshotSettings: ScreenshotSettings
 
     init(
         enabledCommands: Set<MenuCommand>,
@@ -39,7 +42,10 @@ struct ClickMatePreferences: Codable, Equatable {
         pinnedApplicationPaths: [String],
         language: AppLanguage = .system,
         hasDismissedPermissionGuide: Bool = false,
-        menuLayoutDefaultsVersion: Int = Self.currentMenuLayoutDefaultsVersion
+        menuLayoutDefaultsVersion: Int = Self.currentMenuLayoutDefaultsVersion,
+        quickFeatureDefaultsVersion: Int = Self.currentQuickFeatureDefaultsVersion,
+        quickFeatureSettings: [QuickFeatureSettings] = QuickFeatureSettings.defaults,
+        screenshotSettings: ScreenshotSettings = .defaults
     ) {
         self.removedMenuCommands = removedMenuCommands
         self.enabledCommands = enabledCommands.subtracting(removedMenuCommands)
@@ -57,9 +63,13 @@ struct ClickMatePreferences: Codable, Equatable {
         self.language = language
         self.hasDismissedPermissionGuide = hasDismissedPermissionGuide
         self.menuLayoutDefaultsVersion = menuLayoutDefaultsVersion
+        self.quickFeatureDefaultsVersion = quickFeatureDefaultsVersion
+        self.quickFeatureSettings = QuickFeatureSettings.normalized(quickFeatureSettings)
+        self.screenshotSettings = screenshotSettings
     }
 
     static let currentMenuLayoutDefaultsVersion = 1
+    static let currentQuickFeatureDefaultsVersion = 1
 
     static let defaults = ClickMatePreferences(
         enabledCommands: Set(MenuCommand.allCases),
@@ -77,7 +87,10 @@ struct ClickMatePreferences: Codable, Equatable {
         pinnedApplicationPaths: [],
         language: .system,
         hasDismissedPermissionGuide: false,
-        menuLayoutDefaultsVersion: currentMenuLayoutDefaultsVersion
+        menuLayoutDefaultsVersion: currentMenuLayoutDefaultsVersion,
+        quickFeatureDefaultsVersion: currentQuickFeatureDefaultsVersion,
+        quickFeatureSettings: QuickFeatureSettings.defaults,
+        screenshotSettings: .defaults
     )
 
     var orderedMenuCommands: [MenuCommand] {
@@ -106,6 +119,14 @@ struct ClickMatePreferences: Codable, Equatable {
 
     var menuGroupPlacement: MenuGroupPlacement {
         MenuLayoutPolicy.placement(for: self)
+    }
+
+    func quickFeatureSettings(for id: QuickFeatureID) -> QuickFeatureSettings {
+        quickFeatureSettings.first { $0.id == id } ?? QuickFeatureSettings(id: id)
+    }
+
+    func conflictingQuickFeatureIDs() -> Set<QuickFeatureID> {
+        QuickFeatureSettings.conflictingFeatureIDs(in: quickFeatureSettings)
     }
 
     static func normalizedMenuCommandOrder(_ commands: [MenuCommand]) -> [MenuCommand] {
@@ -176,6 +197,9 @@ struct ClickMatePreferences: Codable, Equatable {
         case language
         case hasDismissedPermissionGuide
         case menuLayoutDefaultsVersion
+        case quickFeatureDefaultsVersion
+        case quickFeatureSettings
+        case screenshotSettings
     }
 
     init(from decoder: Decoder) throws {
@@ -203,6 +227,15 @@ struct ClickMatePreferences: Codable, Equatable {
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         hasDismissedPermissionGuide = try container.decodeIfPresent(Bool.self, forKey: .hasDismissedPermissionGuide) ?? false
         menuLayoutDefaultsVersion = try container.decodeIfPresent(Int.self, forKey: .menuLayoutDefaultsVersion) ?? 0
+        quickFeatureDefaultsVersion = try container.decodeIfPresent(Int.self, forKey: .quickFeatureDefaultsVersion) ?? 0
+        let decodedQuickFeatures = try container.decodeIfPresent(
+            LossyQuickFeatureSettings.self,
+            forKey: .quickFeatureSettings
+        )?.values
+        quickFeatureSettings = QuickFeatureSettings.normalized(
+            decodedQuickFeatures ?? QuickFeatureSettings.defaults
+        )
+        screenshotSettings = try container.decodeIfPresent(ScreenshotSettings.self, forKey: .screenshotSettings) ?? .defaults
     }
 
     mutating func migrateMenuLayoutDefaultsIfNeeded() -> Bool {
@@ -214,6 +247,19 @@ struct ClickMatePreferences: Codable, Equatable {
             foldedMenuGroups = MenuCommandGroup.defaultFoldedGroups
         }
         menuLayoutDefaultsVersion = Self.currentMenuLayoutDefaultsVersion
+        return true
+    }
+
+    mutating func migrateQuickFeatureDefaultsIfNeeded() -> Bool {
+        guard quickFeatureDefaultsVersion < Self.currentQuickFeatureDefaultsVersion else {
+            return false
+        }
+
+        if let screenshotIndex = quickFeatureSettings.firstIndex(where: { $0.id == .screenshot }),
+           quickFeatureSettings[screenshotIndex].shortcut == .legacyScreenshotDefault {
+            quickFeatureSettings[screenshotIndex].shortcut = .screenshotDefault
+        }
+        quickFeatureDefaultsVersion = Self.currentQuickFeatureDefaultsVersion
         return true
     }
 }
@@ -399,7 +445,9 @@ final class PreferencesStore: ObservableObject {
         else {
             return (.defaults, false)
         }
-        let didMigrate = preferences.migrateMenuLayoutDefaultsIfNeeded()
+        let didMigrateMenuLayout = preferences.migrateMenuLayoutDefaultsIfNeeded()
+        let didMigrateQuickFeatures = preferences.migrateQuickFeatureDefaultsIfNeeded()
+        let didMigrate = didMigrateMenuLayout || didMigrateQuickFeatures
         return (preferences, didMigrate)
     }
 

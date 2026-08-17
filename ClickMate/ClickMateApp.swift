@@ -26,7 +26,10 @@ struct ClickMateApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let quickFeatureCoordinator = QuickFeatureCoordinator()
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Every launch begins hidden. A user-originated open event promotes the app later.
         NSApp.setActivationPolicy(.accessory)
@@ -39,6 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         observePendingCommands()
         URLRouter.processPendingCommands()
+        quickFeatureCoordinator.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        quickFeatureCoordinator.stop()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

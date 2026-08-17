@@ -71,6 +71,25 @@
 		10000000000000000000003F /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000027 /* UpdateChecker.swift */; };
 		100000000000000000000040 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000027 /* UpdateChecker.swift */; };
 		100000000000000000000041 /* UpdateCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000028 /* UpdateCheckerTests.swift */; };
+		100000000000000000000042 /* Views/QuickFeaturesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000029 /* Views/QuickFeaturesView.swift */; };
+		100000000000000000000043 /* Views/ScreenshotSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002A /* Views/ScreenshotSelectionView.swift */; };
+		100000000000000000000044 /* Services/ScreenshotAnnotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000035 /* Services/ScreenshotAnnotations.swift */; };
+		100000000000000000000045 /* Services/QuickFeaturePermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002C /* Services/QuickFeaturePermissions.swift */; };
+		100000000000000000000046 /* Services/FinderCutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002D /* Services/FinderCutController.swift */; };
+		100000000000000000000047 /* Services/GlobalHotKeyRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002E /* Services/GlobalHotKeyRegistrar.swift */; };
+		100000000000000000000048 /* Services/QuickFeatureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002F /* Services/QuickFeatureCoordinator.swift */; };
+		100000000000000000000049 /* Services/ScreenshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000030 /* Services/ScreenshotService.swift */; };
+		10000000000000000000004A /* Support/HUDPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000031 /* Support/HUDPresenter.swift */; };
+		10000000000000000000004B /* QuickFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000032 /* QuickFeatures.swift */; };
+		10000000000000000000004C /* QuickFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000032 /* QuickFeatures.swift */; };
+		10000000000000000000004D /* QuickFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000032 /* QuickFeatures.swift */; };
+		10000000000000000000004E /* QuickFeaturesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000033 /* QuickFeaturesTests.swift */; };
+		10000000000000000000004F /* ScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000034 /* ScreenshotTests.swift */; };
+		100000000000000000000050 /* Services/ScreenshotAnnotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000035 /* Services/ScreenshotAnnotations.swift */; };
+		100000000000000000000051 /* Views/ScreenshotSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002A /* Views/ScreenshotSelectionView.swift */; };
+		100000000000000000000052 /* Services/ScreenshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000030 /* Services/ScreenshotService.swift */; };
+		100000000000000000000053 /* Services/QuickFeaturePermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002C /* Services/QuickFeaturePermissions.swift */; };
+		100000000000000000000054 /* QuickFeaturePermissionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000036 /* QuickFeaturePermissionsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -145,6 +164,19 @@
 		200000000000000000000026 /* Views/MenuLayoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuLayoutView.swift; sourceTree = "<group>"; };
 		200000000000000000000027 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		200000000000000000000028 /* UpdateCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckerTests.swift; sourceTree = "<group>"; };
+		200000000000000000000029 /* Views/QuickFeaturesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/QuickFeaturesView.swift; sourceTree = "<group>"; };
+		20000000000000000000002A /* Views/ScreenshotSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ScreenshotSelectionView.swift; sourceTree = "<group>"; };
+		200000000000000000000035 /* Services/ScreenshotAnnotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScreenshotAnnotations.swift; sourceTree = "<group>"; };
+		20000000000000000000002C /* Services/QuickFeaturePermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/QuickFeaturePermissions.swift; sourceTree = "<group>"; };
+		20000000000000000000002D /* Services/FinderCutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/FinderCutController.swift; sourceTree = "<group>"; };
+		20000000000000000000002E /* Services/GlobalHotKeyRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/GlobalHotKeyRegistrar.swift; sourceTree = "<group>"; };
+		20000000000000000000002F /* Services/QuickFeatureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/QuickFeatureCoordinator.swift; sourceTree = "<group>"; };
+		200000000000000000000030 /* Services/ScreenshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScreenshotService.swift; sourceTree = "<group>"; };
+		200000000000000000000031 /* Support/HUDPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support/HUDPresenter.swift; sourceTree = "<group>"; };
+		200000000000000000000032 /* QuickFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeatures.swift; sourceTree = "<group>"; };
+		200000000000000000000033 /* QuickFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeaturesTests.swift; sourceTree = "<group>"; };
+		200000000000000000000034 /* ScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTests.swift; sourceTree = "<group>"; };
+		200000000000000000000036 /* QuickFeaturePermissionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeaturePermissionsTests.swift; sourceTree = "<group>"; };
 		400000000000000000000001 /* ClickMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000002 /* ClickMateFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClickMateFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000003 /* ClickMateCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClickMateCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -196,7 +228,16 @@
 				200000000000000000000004 /* Views/TemplatesView.swift */,
 				200000000000000000000005 /* Views/AppsView.swift */,
 				200000000000000000000006 /* Views/PermissionsView.swift */,
+				200000000000000000000029 /* Views/QuickFeaturesView.swift */,
+				20000000000000000000002A /* Views/ScreenshotSelectionView.swift */,
+				200000000000000000000035 /* Services/ScreenshotAnnotations.swift */,
+				20000000000000000000002C /* Services/QuickFeaturePermissions.swift */,
+				20000000000000000000002D /* Services/FinderCutController.swift */,
+				20000000000000000000002E /* Services/GlobalHotKeyRegistrar.swift */,
+				20000000000000000000002F /* Services/QuickFeatureCoordinator.swift */,
+				200000000000000000000030 /* Services/ScreenshotService.swift */,
 				200000000000000000000007 /* Support/URLRouter.swift */,
+				200000000000000000000031 /* Support/HUDPresenter.swift */,
 				200000000000000000000014 /* Info.plist */,
 				200000000000000000000015 /* ClickMate.entitlements */,
 				20000000000000000000001F /* Assets.xcassets */,
@@ -228,6 +269,7 @@
 				200000000000000000000009 /* FileTemplate.swift */,
 				20000000000000000000000A /* MenuCommand.swift */,
 				20000000000000000000000B /* ClickMatePreferences.swift */,
+				200000000000000000000032 /* QuickFeatures.swift */,
 				20000000000000000000000C /* PathFormatter.swift */,
 				20000000000000000000000D /* FileCreator.swift */,
 				20000000000000000000000E /* FileHasher.swift */,
@@ -247,6 +289,9 @@
 			children = (
 				200000000000000000000013 /* ClickMateCoreTests.swift */,
 				200000000000000000000028 /* UpdateCheckerTests.swift */,
+				200000000000000000000033 /* QuickFeaturesTests.swift */,
+				200000000000000000000034 /* ScreenshotTests.swift */,
+				200000000000000000000036 /* QuickFeaturePermissionsTests.swift */,
 			);
 			path = Tests/ClickMateCoreTests;
 			sourceTree = "<group>";
@@ -396,12 +441,22 @@
 				100000000000000000000004 /* Views/TemplatesView.swift in Sources */,
 				100000000000000000000005 /* Views/AppsView.swift in Sources */,
 				100000000000000000000006 /* Views/PermissionsView.swift in Sources */,
+				100000000000000000000042 /* Views/QuickFeaturesView.swift in Sources */,
+				100000000000000000000043 /* Views/ScreenshotSelectionView.swift in Sources */,
+				100000000000000000000044 /* Services/ScreenshotAnnotations.swift in Sources */,
+				100000000000000000000045 /* Services/QuickFeaturePermissions.swift in Sources */,
+				100000000000000000000046 /* Services/FinderCutController.swift in Sources */,
+				100000000000000000000047 /* Services/GlobalHotKeyRegistrar.swift in Sources */,
+				100000000000000000000048 /* Services/QuickFeatureCoordinator.swift in Sources */,
+				100000000000000000000049 /* Services/ScreenshotService.swift in Sources */,
 				100000000000000000000007 /* Support/URLRouter.swift in Sources */,
+				10000000000000000000004A /* Support/HUDPresenter.swift in Sources */,
 				100000000000000000000008 /* AppConstants.swift in Sources */,
 				10000000000000000000002C /* AppLanguage.swift in Sources */,
 				100000000000000000000009 /* FileTemplate.swift in Sources */,
 				10000000000000000000000A /* MenuCommand.swift in Sources */,
 				10000000000000000000000B /* ClickMatePreferences.swift in Sources */,
+				10000000000000000000004B /* QuickFeatures.swift in Sources */,
 				10000000000000000000000C /* PathFormatter.swift in Sources */,
 				10000000000000000000000D /* FileCreator.swift in Sources */,
 				10000000000000000000000E /* FileHasher.swift in Sources */,
@@ -425,6 +480,7 @@
 				100000000000000000000014 /* FileTemplate.swift in Sources */,
 				100000000000000000000015 /* MenuCommand.swift in Sources */,
 				100000000000000000000016 /* ClickMatePreferences.swift in Sources */,
+				10000000000000000000004C /* QuickFeatures.swift in Sources */,
 				100000000000000000000017 /* PathFormatter.swift in Sources */,
 				100000000000000000000018 /* FileCreator.swift in Sources */,
 				100000000000000000000019 /* FileHasher.swift in Sources */,
@@ -444,10 +500,18 @@
 			files = (
 				10000000000000000000001D /* ClickMateCoreTests.swift in Sources */,
 				100000000000000000000041 /* UpdateCheckerTests.swift in Sources */,
+				10000000000000000000004E /* QuickFeaturesTests.swift in Sources */,
+				10000000000000000000004F /* ScreenshotTests.swift in Sources */,
+				100000000000000000000050 /* Services/ScreenshotAnnotations.swift in Sources */,
+				100000000000000000000051 /* Views/ScreenshotSelectionView.swift in Sources */,
+				100000000000000000000052 /* Services/ScreenshotService.swift in Sources */,
+				100000000000000000000053 /* Services/QuickFeaturePermissions.swift in Sources */,
+				100000000000000000000054 /* QuickFeaturePermissionsTests.swift in Sources */,
 				100000000000000000000040 /* UpdateChecker.swift in Sources */,
 				100000000000000000000032 /* AppConstants.swift in Sources */,
 				10000000000000000000002E /* AppLanguage.swift in Sources */,
 				100000000000000000000033 /* ClickMatePreferences.swift in Sources */,
+				10000000000000000000004D /* QuickFeatures.swift in Sources */,
 				100000000000000000000034 /* PathFormatter.swift in Sources */,
 				100000000000000000000035 /* FileCreator.swift in Sources */,
 				100000000000000000000036 /* FileHasher.swift in Sources */,
