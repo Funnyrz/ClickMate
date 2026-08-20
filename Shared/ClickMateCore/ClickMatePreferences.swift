@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Security
 
 enum MonitoringMode: String, Codable, Equatable {
     case wideCoverage
@@ -21,8 +22,12 @@ struct ClickMatePreferences: Codable, Equatable {
     var pinnedApplicationPaths: [String]
     var language: AppLanguage
     var hasDismissedPermissionGuide: Bool
+    var backgroundServiceEnabled: Bool
+    var hasAcknowledgedHelperPermissionMigration: Bool
+    var hasAcknowledgedFinderMonitoringMigration: Bool
     var menuLayoutDefaultsVersion: Int
     var quickFeatureDefaultsVersion: Int
+    var finderMonitoringPolicyVersion: Int
     var quickFeatureSettings: [QuickFeatureSettings]
     var screenshotSettings: ScreenshotSettings
 
@@ -42,8 +47,12 @@ struct ClickMatePreferences: Codable, Equatable {
         pinnedApplicationPaths: [String],
         language: AppLanguage = .system,
         hasDismissedPermissionGuide: Bool = false,
+        backgroundServiceEnabled: Bool = true,
+        hasAcknowledgedHelperPermissionMigration: Bool = true,
+        hasAcknowledgedFinderMonitoringMigration: Bool = true,
         menuLayoutDefaultsVersion: Int = Self.currentMenuLayoutDefaultsVersion,
         quickFeatureDefaultsVersion: Int = Self.currentQuickFeatureDefaultsVersion,
+        finderMonitoringPolicyVersion: Int = Self.currentFinderMonitoringPolicyVersion,
         quickFeatureSettings: [QuickFeatureSettings] = QuickFeatureSettings.defaults,
         screenshotSettings: ScreenshotSettings = .defaults
     ) {
@@ -62,14 +71,19 @@ struct ClickMatePreferences: Codable, Equatable {
         self.pinnedApplicationPaths = pinnedApplicationPaths
         self.language = language
         self.hasDismissedPermissionGuide = hasDismissedPermissionGuide
+        self.backgroundServiceEnabled = backgroundServiceEnabled
+        self.hasAcknowledgedHelperPermissionMigration = hasAcknowledgedHelperPermissionMigration
+        self.hasAcknowledgedFinderMonitoringMigration = hasAcknowledgedFinderMonitoringMigration
         self.menuLayoutDefaultsVersion = menuLayoutDefaultsVersion
         self.quickFeatureDefaultsVersion = quickFeatureDefaultsVersion
+        self.finderMonitoringPolicyVersion = finderMonitoringPolicyVersion
         self.quickFeatureSettings = QuickFeatureSettings.normalized(quickFeatureSettings)
         self.screenshotSettings = screenshotSettings
     }
 
     static let currentMenuLayoutDefaultsVersion = 1
     static let currentQuickFeatureDefaultsVersion = 1
+    static let currentFinderMonitoringPolicyVersion = 4
 
     static let defaults = ClickMatePreferences(
         enabledCommands: Set(MenuCommand.allCases),
@@ -87,8 +101,12 @@ struct ClickMatePreferences: Codable, Equatable {
         pinnedApplicationPaths: [],
         language: .system,
         hasDismissedPermissionGuide: false,
+        backgroundServiceEnabled: true,
+        hasAcknowledgedHelperPermissionMigration: true,
+        hasAcknowledgedFinderMonitoringMigration: true,
         menuLayoutDefaultsVersion: currentMenuLayoutDefaultsVersion,
         quickFeatureDefaultsVersion: currentQuickFeatureDefaultsVersion,
+        finderMonitoringPolicyVersion: currentFinderMonitoringPolicyVersion,
         quickFeatureSettings: QuickFeatureSettings.defaults,
         screenshotSettings: .defaults
     )
@@ -196,8 +214,12 @@ struct ClickMatePreferences: Codable, Equatable {
         case pinnedApplicationPaths
         case language
         case hasDismissedPermissionGuide
+        case backgroundServiceEnabled
+        case hasAcknowledgedHelperPermissionMigration
+        case hasAcknowledgedFinderMonitoringMigration
         case menuLayoutDefaultsVersion
         case quickFeatureDefaultsVersion
+        case finderMonitoringPolicyVersion
         case quickFeatureSettings
         case screenshotSettings
     }
@@ -226,8 +248,21 @@ struct ClickMatePreferences: Codable, Equatable {
         pinnedApplicationPaths = try container.decodeIfPresent([String].self, forKey: .pinnedApplicationPaths) ?? []
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         hasDismissedPermissionGuide = try container.decodeIfPresent(Bool.self, forKey: .hasDismissedPermissionGuide) ?? false
+        backgroundServiceEnabled = try container.decodeIfPresent(Bool.self, forKey: .backgroundServiceEnabled) ?? true
+        hasAcknowledgedHelperPermissionMigration = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .hasAcknowledgedHelperPermissionMigration
+        ) ?? false
+        hasAcknowledgedFinderMonitoringMigration = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .hasAcknowledgedFinderMonitoringMigration
+        ) ?? false
         menuLayoutDefaultsVersion = try container.decodeIfPresent(Int.self, forKey: .menuLayoutDefaultsVersion) ?? 0
         quickFeatureDefaultsVersion = try container.decodeIfPresent(Int.self, forKey: .quickFeatureDefaultsVersion) ?? 0
+        finderMonitoringPolicyVersion = try container.decodeIfPresent(
+            Int.self,
+            forKey: .finderMonitoringPolicyVersion
+        ) ?? 0
         let decodedQuickFeatures = try container.decodeIfPresent(
             LossyQuickFeatureSettings.self,
             forKey: .quickFeatureSettings
@@ -260,6 +295,25 @@ struct ClickMatePreferences: Codable, Equatable {
             quickFeatureSettings[screenshotIndex].shortcut = .screenshotDefault
         }
         quickFeatureDefaultsVersion = Self.currentQuickFeatureDefaultsVersion
+        return true
+    }
+
+    mutating func migrateFinderMonitoringPolicyIfNeeded() -> Bool {
+        guard finderMonitoringPolicyVersion < Self.currentFinderMonitoringPolicyVersion else {
+            return false
+        }
+
+        monitoredFolderPaths = MonitoredFolderPolicy.sanitizedCustomFolderPaths(monitoredFolderPaths)
+        let retainedPaths = Set(monitoredFolderPaths)
+        monitoredFolderBookmarks = monitoredFolderBookmarks.reduce(into: [:]) { result, entry in
+            let canonicalPath = MonitoredFolderPolicy.canonicalPath(
+                for: URL(fileURLWithPath: entry.key, isDirectory: true)
+            )
+            guard retainedPaths.contains(canonicalPath) else { return }
+            result[canonicalPath] = entry.value
+        }
+        finderMonitoringPolicyVersion = Self.currentFinderMonitoringPolicyVersion
+        hasAcknowledgedFinderMonitoringMigration = false
         return true
     }
 }
@@ -359,15 +413,27 @@ final class PreferencesStore: ObservableObject {
     }
 
     private let fileURL: URL
+    private let allowsWrites: Bool
+    private let publishesPinnedApplications: Bool
     private let saveQueue = DispatchQueue(label: "\(AppConstants.bundleIdentifier).preferences.save")
     private var isReloading = false
 
-    init(fileURL: URL = PreferencesStore.sharedPreferencesURL) {
+    init(
+        fileURL: URL = PreferencesStore.sharedPreferencesURL,
+        allowsWrites: Bool = true
+    ) {
         self.fileURL = fileURL
-        Self.migrateFallbackPreferencesIfNeeded(to: fileURL)
+        self.allowsWrites = allowsWrites
+        self.publishesPinnedApplications = allowsWrites
+            && fileURL.standardizedFileURL == Self.fallbackPreferencesURL.standardizedFileURL
+        if allowsWrites {
+            Self.migrateFallbackPreferencesIfNeeded(to: fileURL)
+        }
         let loaded = Self.loadWithMigration(from: fileURL)
         self.preferences = loaded.preferences
-        if !FileManager.default.fileExists(atPath: fileURL.path) || loaded.didMigrate {
+        publishPinnedApplicationsIfNeeded(loaded.preferences)
+        if allowsWrites,
+           (!FileManager.default.fileExists(atPath: fileURL.path) || loaded.didMigrate) {
             saveSynchronously(preferences)
         }
     }
@@ -405,6 +471,8 @@ final class PreferencesStore: ObservableObject {
     }
 
     private func save(_ preferences: ClickMatePreferences) {
+        guard allowsWrites else { return }
+        publishPinnedApplicationsIfNeeded(preferences)
         let fileURL = fileURL
         saveQueue.async {
             Self.write(preferences, to: fileURL)
@@ -412,10 +480,17 @@ final class PreferencesStore: ObservableObject {
     }
 
     private func saveSynchronously(_ preferences: ClickMatePreferences) {
+        guard allowsWrites else { return }
+        publishPinnedApplicationsIfNeeded(preferences)
         let fileURL = fileURL
         saveQueue.sync {
             Self.write(preferences, to: fileURL)
         }
+    }
+
+    private func publishPinnedApplicationsIfNeeded(_ preferences: ClickMatePreferences) {
+        guard publishesPinnedApplications else { return }
+        PinnedApplicationSyncStore.publish(paths: preferences.pinnedApplicationPaths)
     }
 
     private static func write(_ preferences: ClickMatePreferences, to fileURL: URL) {
@@ -447,7 +522,8 @@ final class PreferencesStore: ObservableObject {
         }
         let didMigrateMenuLayout = preferences.migrateMenuLayoutDefaultsIfNeeded()
         let didMigrateQuickFeatures = preferences.migrateQuickFeatureDefaultsIfNeeded()
-        let didMigrate = didMigrateMenuLayout || didMigrateQuickFeatures
+        let didMigrateFinderMonitoring = preferences.migrateFinderMonitoringPolicyIfNeeded()
+        let didMigrate = didMigrateMenuLayout || didMigrateQuickFeatures || didMigrateFinderMonitoring
         return (preferences, didMigrate)
     }
 
@@ -471,7 +547,7 @@ final class PreferencesStore: ObservableObject {
     }
 
     static var sharedPreferencesURL: URL {
-        if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroupIdentifier) {
+        if let containerURL = ApplicationGroupAccessPolicy.sharedContainerURL() {
             return containerURL.appendingPathComponent(Storage.filename)
         }
         return fallbackPreferencesURL
@@ -483,6 +559,161 @@ final class PreferencesStore: ObservableObject {
             .first!
             .appendingPathComponent("ClickMate", isDirectory: true)
             .appendingPathComponent(Storage.filename)
+    }
+}
+
+enum ApplicationGroupAccessPolicy {
+    static var isSharedContainerAuthorized: Bool {
+        isSharedContainerAuthorized(bundle: .main)
+    }
+
+    static func isSharedContainerAuthorized(
+        bundle: Bundle,
+        groupIdentifier: String = AppConstants.appGroupIdentifier
+    ) -> Bool {
+        guard let bundleIdentifier = bundle.bundleIdentifier,
+              let signingIdentity = signingIdentity(
+            bundleURL: bundle.bundleURL,
+            groupIdentifier: groupIdentifier
+              ),
+              signingIdentity.applicationIdentifier
+                == "\(signingIdentity.teamIdentifier).\(bundleIdentifier)"
+        else {
+            return false
+        }
+        let profileURL = bundle.bundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("embedded.provisionprofile")
+        guard FileManager.default.fileExists(atPath: profileURL.path) else {
+            return false
+        }
+        guard let profileData = try? Data(contentsOf: profileURL),
+              let propertyList = decodedProvisioningProfilePropertyList(from: profileData)
+        else {
+            return false
+        }
+        return profileAuthorizesApplicationGroup(
+            groupIdentifier,
+            bundleIdentifier: bundleIdentifier,
+            teamIdentifier: signingIdentity.teamIdentifier,
+            propertyList: propertyList
+        )
+    }
+
+    static func sharedContainerURL(
+        fileManager: FileManager = .default,
+        bundle: Bundle = .main,
+        groupIdentifier: String = AppConstants.appGroupIdentifier,
+        authorizationProvider: ((Bundle, String) -> Bool)? = nil,
+        containerURLProvider: ((String) -> URL?)? = nil
+    ) -> URL? {
+        let isAuthorized = authorizationProvider?(bundle, groupIdentifier)
+            ?? isSharedContainerAuthorized(bundle: bundle, groupIdentifier: groupIdentifier)
+        guard isAuthorized else { return nil }
+        if let containerURLProvider {
+            return containerURLProvider(groupIdentifier)
+        }
+        return fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: groupIdentifier
+        )
+    }
+
+    static func profileAuthorizesApplicationGroup(
+        _ groupIdentifier: String,
+        bundleIdentifier: String? = nil,
+        teamIdentifier: String? = nil,
+        propertyList: Any
+    ) -> Bool {
+        guard let profile = propertyList as? [String: Any],
+              let entitlements = profile["Entitlements"] as? [String: Any],
+              let groups = entitlements["com.apple.security.application-groups"] as? [String]
+        else {
+            return false
+        }
+        guard groups.contains(groupIdentifier) else { return false }
+
+        if let bundleIdentifier, let teamIdentifier {
+            let expectedApplicationIdentifier = "\(teamIdentifier).\(bundleIdentifier)"
+            guard entitlements["com.apple.application-identifier"] as? String
+                    == expectedApplicationIdentifier,
+                  entitlements["com.apple.developer.team-identifier"] as? String
+                    == teamIdentifier,
+                  let profileTeamIdentifiers = profile["TeamIdentifier"] as? [String],
+                  profileTeamIdentifiers.contains(teamIdentifier)
+            else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func decodedProvisioningProfilePropertyList(from data: Data) -> Any? {
+        var decoder: CMSDecoder?
+        guard CMSDecoderCreate(&decoder) == errSecSuccess,
+              let decoder
+        else {
+            return nil
+        }
+        let updateStatus = data.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return errSecParam }
+            return CMSDecoderUpdateMessage(decoder, baseAddress, data.count)
+        }
+        guard updateStatus == errSecSuccess,
+              CMSDecoderFinalizeMessage(decoder) == errSecSuccess
+        else {
+            return nil
+        }
+        var content: CFData?
+        guard CMSDecoderCopyContent(decoder, &content) == errSecSuccess,
+              let content
+        else {
+            return nil
+        }
+        return try? PropertyListSerialization.propertyList(
+            from: content as Data,
+            options: [],
+            format: nil
+        )
+    }
+
+    private struct SigningIdentity {
+        let teamIdentifier: String
+        let applicationIdentifier: String
+    }
+
+    private static func signingIdentity(
+        bundleURL: URL,
+        groupIdentifier: String
+    ) -> SigningIdentity? {
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(bundleURL as CFURL, [], &staticCode) == errSecSuccess,
+              let staticCode,
+              SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
+        else {
+            return nil
+        }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+              let dictionary = information as? [String: Any],
+              let teamIdentifier = dictionary[kSecCodeInfoTeamIdentifier as String] as? String,
+              !teamIdentifier.isEmpty,
+              let entitlements = dictionary[kSecCodeInfoEntitlementsDict as String] as? [String: Any],
+              let applicationIdentifier = entitlements["com.apple.application-identifier"] as? String,
+              let entitlementTeamIdentifier = entitlements["com.apple.developer.team-identifier"] as? String,
+              entitlementTeamIdentifier == teamIdentifier,
+              let applicationGroups = entitlements["com.apple.security.application-groups"] as? [String],
+              applicationGroups.contains(groupIdentifier)
+        else {
+            return nil
+        }
+        return SigningIdentity(
+            teamIdentifier: teamIdentifier,
+            applicationIdentifier: applicationIdentifier
+        )
     }
 }
 
@@ -508,28 +739,60 @@ enum MonitoredFolderPolicy {
     private static let blockedExactRoots: Set<String> = [
         "/private", "/var", "/tmp"
     ]
-    private static let skippedExpandedDirectoryNames: Set<String> = [
-        "Library"
+    private static let commonUserDirectoryNames = [
+        "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures", "Public",
+        "Projects", "Workspace"
     ]
 
     static func defaultMonitoredFolderPaths(fileManager: FileManager = .default) -> [String] {
-        let home = canonicalPath(for: userHomeDirectory(fileManager: fileManager))
-        return normalizedUserPaths([
-            home,
-            URL(fileURLWithPath: home).appendingPathComponent("Desktop").path,
-            URL(fileURLWithPath: home).appendingPathComponent("Documents").path,
-            URL(fileURLWithPath: home).appendingPathComponent("Downloads").path
-        ], fileManager: fileManager)
+        defaultDirectoryURLsForFinderSyncBootstrap(fileManager: fileManager).map(\.path)
     }
 
     static func defaultDirectoryURLsForFinderSyncBootstrap(fileManager: FileManager = .default) -> [URL] {
         let home = userHomeDirectory(fileManager: fileManager).standardizedFileURL
-        return [
-            home,
-            home.appendingPathComponent("Desktop", isDirectory: true),
-            home.appendingPathComponent("Documents", isDirectory: true),
-            home.appendingPathComponent("Downloads", isDirectory: true)
-        ]
+        return safeTopLevelDirectoryURLs(in: home, fileManager: fileManager)
+    }
+
+    static func safeTopLevelDirectoryURLs(
+        in homeDirectory: URL,
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        let home = homeDirectory.standardizedFileURL
+        let homeLibrary = canonicalPath(
+            for: home.appendingPathComponent("Library", isDirectory: true)
+        )
+        var candidates = commonUserDirectoryNames.map {
+            home.appendingPathComponent($0, isDirectory: true)
+        }
+
+        if let discovered = try? fileManager.contentsOfDirectory(
+            at: home,
+            includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            candidates.append(contentsOf: discovered)
+        }
+
+        let safeDirectories = candidates.compactMap { candidate -> URL? in
+            guard !candidate.lastPathComponent.hasPrefix(".") else { return nil }
+            let values = try? candidate.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            guard values?.isDirectory == true, values?.isPackage != true else { return nil }
+
+            let canonical = canonicalPath(for: candidate)
+            guard canonical != homeLibrary,
+                  !canonical.hasPrefix(homeLibrary + "/"),
+                  !isBlockedSystemPath(canonical),
+                  !isUnsafeFinderSyncRoot(canonical, fileManager: fileManager),
+                  isAvailableDirectory(canonical, fileManager: fileManager)
+            else {
+                return nil
+            }
+            return URL(fileURLWithPath: canonical, isDirectory: true)
+        }
+
+        return Array(Set(safeDirectories)).sorted {
+            $0.path.localizedStandardCompare($1.path) == .orderedAscending
+        }
     }
 
     static func canonicalPath(for url: URL) -> String {
@@ -570,6 +833,27 @@ enum MonitoredFolderPolicy {
         }
     }
 
+    static func isUnsafeFinderSyncRoot(
+        _ path: String,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        let canonical = canonicalPath(for: URL(fileURLWithPath: path, isDirectory: true))
+        let home = canonicalPath(for: userHomeDirectory(fileManager: fileManager))
+        let userLibrary = URL(fileURLWithPath: home, isDirectory: true)
+            .appendingPathComponent("Library", isDirectory: true)
+            .path
+        return canonical == home
+            || canonical == userLibrary
+            || canonical.hasPrefix(userLibrary + "/")
+    }
+
+    static func sanitizedCustomFolderPaths(
+        _ paths: [String],
+        fileManager: FileManager = .default
+    ) -> [String] {
+        normalizedUserPaths(paths, fileManager: fileManager)
+    }
+
     static func normalizedUserPaths(
         _ paths: [String],
         fileManager: FileManager = .default,
@@ -577,7 +861,9 @@ enum MonitoredFolderPolicy {
     ) -> [String] {
         let normalized = paths.compactMap { path -> String? in
             let canonical = canonicalPath(for: URL(fileURLWithPath: path))
-            guard !isBlockedSystemPath(canonical) else {
+            guard !isBlockedSystemPath(canonical),
+                  !isUnsafeFinderSyncRoot(canonical, fileManager: fileManager)
+            else {
                 return nil
             }
             guard !requireExistingDirectory || isAvailableDirectory(canonical, fileManager: fileManager) else {
@@ -594,7 +880,9 @@ enum MonitoredFolderPolicy {
 
         for url in urls {
             let path = canonicalPath(for: url)
-            if isBlockedSystemPath(path) || !isAvailableDirectory(path, fileManager: fileManager) {
+            if isBlockedSystemPath(path)
+                || isUnsafeFinderSyncRoot(path, fileManager: fileManager)
+                || !isAvailableDirectory(path, fileManager: fileManager) {
                 rejected.append(path)
             } else {
                 accepted.append(path)
@@ -607,17 +895,13 @@ enum MonitoredFolderPolicy {
     static func effectiveDirectoryURLs(
         for preferences: ClickMatePreferences,
         fileManager: FileManager = .default,
-        volumesRoot: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        volumesRoot _: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true)
     ) -> Set<URL> {
-        var paths = normalizedUserPaths(
+        let paths = normalizedUserPaths(
             defaultMonitoredFolderPaths(fileManager: fileManager) + preferences.monitoredFolderPaths,
             fileManager: fileManager,
             requireExistingDirectory: false
         )
-
-        if preferences.monitoringMode == .wideCoverage {
-            paths.append(contentsOf: mountedVolumeRootPaths(volumesRoot: volumesRoot, fileManager: fileManager))
-        }
 
         return Set(normalizedUserPaths(paths, fileManager: fileManager, requireExistingDirectory: false).map { URL(fileURLWithPath: $0, isDirectory: true) })
     }
@@ -626,69 +910,24 @@ enum MonitoredFolderPolicy {
         for preferences: ClickMatePreferences,
         hasFullDiskAccess: Bool = DiskAccessPolicy.hasFullDiskAccess(),
         fileManager: FileManager = .default,
-        volumesRoot: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true),
-        maxDepth: Int = 5,
-        maxDirectoryCount: Int = 2_000
+        volumesRoot _: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true)
     ) -> Set<URL> {
         var urls = Set(defaultDirectoryURLsForFinderSyncBootstrap(fileManager: fileManager))
-
-        if preferences.monitoringMode == .wideCoverage {
-            urls.formUnion(mountedVolumeRootPaths(volumesRoot: volumesRoot, fileManager: fileManager).map {
-                URL(fileURLWithPath: $0, isDirectory: true)
-            })
-        }
 
         let selectedRoots = monitoredDirectoryURLs(
             for: preferences,
             requiresBookmarks: !hasFullDiskAccess,
             fileManager: fileManager
         )
-        urls.formUnion(expandedDirectoryURLs(
-            from: selectedRoots,
-            fileManager: fileManager,
-            maxDepth: maxDepth,
-            maxDirectoryCount: maxDirectoryCount
-        ))
+        urls.formUnion(selectedRoots)
 
         return urls
     }
 
-    static func expandedDirectoryURLs(
-        from roots: Set<URL>,
-        fileManager: FileManager = .default,
-        maxDepth: Int,
-        maxDirectoryCount: Int
-    ) -> Set<URL> {
-        guard maxDepth >= 0, maxDirectoryCount > 0 else { return [] }
-
-        var result: Set<URL> = []
-        var queue = roots
-            .map { $0.standardizedFileURL }
-            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-            .map { (url: $0, depth: 0) }
-
-        while !queue.isEmpty, result.count < maxDirectoryCount {
-            let entry = queue.removeFirst()
-            let path = canonicalPath(for: entry.url)
-            guard !isBlockedSystemPath(path), isAvailableDirectory(path, fileManager: fileManager) else {
-                continue
-            }
-
-            let url = URL(fileURLWithPath: path, isDirectory: true)
-            guard result.insert(url).inserted, entry.depth < maxDepth else {
-                continue
-            }
-
-            let children = childDirectoryURLs(in: url, fileManager: fileManager)
-            for child in children where result.count + queue.count < maxDirectoryCount {
-                queue.append((url: child, depth: entry.depth + 1))
-            }
-        }
-
-        return result
-    }
-
-    private static func mountedVolumeRootPaths(volumesRoot: URL, fileManager: FileManager) -> [String] {
+    static func mountedVolumeRootPaths(
+        volumesRoot: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true),
+        fileManager: FileManager = .default
+    ) -> [String] {
         guard let urls = try? fileManager.contentsOfDirectory(
             at: volumesRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -719,6 +958,7 @@ enum MonitoredFolderPolicy {
             let canonical = canonicalPath(for: URL(fileURLWithPath: path, isDirectory: true))
             guard (!requiresBookmarks || bookmarkPaths.contains(canonical)),
                   !isBlockedSystemPath(canonical),
+                  !isUnsafeFinderSyncRoot(canonical, fileManager: fileManager),
                   isAvailableDirectory(canonical, fileManager: fileManager)
             else {
                 return nil
@@ -727,63 +967,353 @@ enum MonitoredFolderPolicy {
         })
     }
 
-    private static func childDirectoryURLs(in url: URL, fileManager: FileManager) -> [URL] {
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        return urls.compactMap { child in
-            guard !child.lastPathComponent.hasPrefix(".") else { return nil }
-            guard !skippedExpandedDirectoryNames.contains(child.lastPathComponent) else { return nil }
-            let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
-            guard values?.isDirectory == true, values?.isPackage != true else { return nil }
-            let path = canonicalPath(for: child)
-            guard !isBlockedSystemPath(path), isAvailableDirectory(path, fileManager: fileManager) else {
-                return nil
-            }
-            return URL(fileURLWithPath: path, isDirectory: true)
-        }
-        .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-    }
-
     private static func isAvailableDirectory(_ path: String, fileManager: FileManager) -> Bool {
         var isDirectory: ObjCBool = false
         return fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
 
-enum DiskAccessPolicy {
-    static func hasFullDiskAccess(fileManager: FileManager = .default) -> Bool {
-        let home = MonitoredFolderPolicy.userHomeDirectory(fileManager: fileManager)
-        let probes = [
-            home.appendingPathComponent("Library/Mail", isDirectory: true),
-            home.appendingPathComponent("Library/Safari", isDirectory: true),
-            home.appendingPathComponent("Library/Application Support/com.apple.TCC", isDirectory: true)
-        ]
+enum DiskAccessStatus: String, Codable, Equatable {
+    case granted
+    case denied
+    case unavailable
+    case unknown
 
-        return probes.contains { probe in
-            guard fileManager.fileExists(atPath: probe.path) else { return false }
-            return (try? fileManager.contentsOfDirectory(
-                at: probe,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            )) != nil
+    var isGranted: Bool {
+        self == .granted
+    }
+}
+
+enum DiskAccessProbeResult: Equatable {
+    case accessible
+    case permissionDenied
+    case unavailable
+    case unknown
+}
+
+enum FinderExtensionAccessResult: String, Codable, Equatable {
+    case success
+    case permissionDenied
+    case failed
+}
+
+enum DiskAccessPolicy {
+    typealias ProbeProvider = (URL) -> DiskAccessProbeResult
+
+    static func status(fileManager: FileManager = .default) -> DiskAccessStatus {
+        .unknown
+    }
+
+    static func status(
+        probes: [URL],
+        probeProvider: ProbeProvider
+    ) -> DiskAccessStatus {
+        let results = probes.map(probeProvider)
+        if results.contains(.accessible) {
+            return .granted
         }
+        if results.contains(.permissionDenied) {
+            return .denied
+        }
+        if !results.isEmpty, results.allSatisfy({ $0 == .unavailable }) {
+            return .unavailable
+        }
+        return .unknown
+    }
+
+    static func hasFullDiskAccess(fileManager: FileManager = .default) -> Bool {
+        false
     }
 
     static func scopedOrDirectAccess(
         containing targetDirectory: URL,
         preferences: ClickMatePreferences,
-        hasFullDiskAccess: Bool = hasFullDiskAccess()
+        hasFullDiskAccess: Bool? = nil
     ) -> SecurityScopedFolderAccess.ScopedAccess? {
-        if hasFullDiskAccess {
+        if let scopedAccess = SecurityScopedFolderAccess.scopedAccess(
+            containing: targetDirectory,
+            preferences: preferences
+        ) {
+            return scopedAccess
+        }
+        if hasFullDiskAccess != false {
             return SecurityScopedFolderAccess.ScopedAccess(url: targetDirectory, didStartAccessing: false)
         }
-        return SecurityScopedFolderAccess.scopedAccess(containing: targetDirectory, preferences: preferences)
+        return nil
+    }
+
+}
+
+struct FinderExtensionRuntimeSnapshot: Codable, Equatable {
+    static let currentMonitoringPolicyVersion = 4
+
+    var pid: Int32
+    var version: String
+    var updatedAt: Date
+    var diskAccessStatus: DiskAccessStatus
+    var monitoringPolicyVersion: Int?
+    var lastAccessResult: FinderExtensionAccessResult?
+    var lastAccessAt: Date?
+
+    init(
+        pid: Int32,
+        version: String,
+        updatedAt: Date = .now,
+        diskAccessStatus: DiskAccessStatus,
+        monitoringPolicyVersion: Int? = Self.currentMonitoringPolicyVersion,
+        lastAccessResult: FinderExtensionAccessResult? = nil,
+        lastAccessAt: Date? = nil
+    ) {
+        self.pid = pid
+        self.version = version
+        self.updatedAt = updatedAt
+        self.diskAccessStatus = diskAccessStatus
+        self.monitoringPolicyVersion = monitoringPolicyVersion
+        self.lastAccessResult = lastAccessResult
+        self.lastAccessAt = lastAccessAt
+    }
+
+}
+
+enum FinderExtensionRuntimeSnapshotPolicy {
+    static func accepts(
+        _ snapshot: FinderExtensionRuntimeSnapshot,
+        currentVersion: String,
+        previousPID: Int32? = nil,
+        updatedAfter: Date? = nil,
+        referenceDate _: Date = .now,
+        isExpectedRunningProcess: (Int32) -> Bool
+    ) -> Bool {
+        guard snapshot.version == currentVersion,
+              snapshot.monitoringPolicyVersion == FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion,
+              isExpectedRunningProcess(snapshot.pid)
+        else {
+            return false
+        }
+
+        if let previousPID, snapshot.pid == previousPID {
+            return false
+        }
+        if let updatedAfter, snapshot.updatedAt < updatedAfter {
+            return false
+        }
+        return true
+    }
+}
+
+struct FinderExtensionPolicyRecoveryTracker {
+    private(set) var attemptedAutomaticRecovery = false
+
+    mutating func begin(isAutomatic: Bool) -> Bool {
+        guard isAutomatic else { return true }
+        guard !attemptedAutomaticRecovery else { return false }
+        attemptedAutomaticRecovery = true
+        return true
+    }
+}
+
+enum FullDiskAccessRecoveryPhase: String, Codable, Equatable {
+    case waitingForReturn
+    case relaunchScheduled
+    case reloadingExtension
+    case completed
+    case failed
+}
+
+struct FullDiskAccessRecoveryRequest: Codable, Equatable {
+    let id: UUID
+    let settingsOpenedAt: Date
+    let previousApplicationPID: Int32?
+    let previousFinderExtensionPID: Int32?
+    private(set) var phase: FullDiskAccessRecoveryPhase
+
+    init(
+        id: UUID = UUID(),
+        settingsOpenedAt: Date = .now,
+        previousApplicationPID: Int32? = ProcessInfo.processInfo.processIdentifier,
+        previousFinderExtensionPID: Int32? = nil,
+        phase: FullDiskAccessRecoveryPhase = .waitingForReturn
+    ) {
+        self.id = id
+        self.settingsOpenedAt = settingsOpenedAt
+        self.previousApplicationPID = previousApplicationPID
+        self.previousFinderExtensionPID = previousFinderExtensionPID
+        self.phase = phase
+    }
+
+    mutating func markRelaunchScheduled() -> Bool {
+        guard phase == .waitingForReturn else { return false }
+        phase = .relaunchScheduled
+        return true
+    }
+
+    mutating func markExtensionReloadStarted(currentApplicationPID: Int32) -> Bool {
+        guard phase == .relaunchScheduled,
+              previousApplicationPID == nil || previousApplicationPID != currentApplicationPID
+        else { return false }
+        phase = .reloadingExtension
+        return true
+    }
+
+    mutating func markCompleted() {
+        phase = .completed
+    }
+
+    mutating func markFailed() {
+        phase = .failed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case settingsOpenedAt
+        case previousApplicationPID
+        case previousFinderExtensionPID
+        case phase
+        case didAttemptProcessRefresh
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        settingsOpenedAt = try container.decode(Date.self, forKey: .settingsOpenedAt)
+        previousApplicationPID = try container.decodeIfPresent(
+            Int32.self,
+            forKey: .previousApplicationPID
+        )
+        previousFinderExtensionPID = try container.decodeIfPresent(
+            Int32.self,
+            forKey: .previousFinderExtensionPID
+        )
+        if let decodedPhase = try container.decodeIfPresent(
+            FullDiskAccessRecoveryPhase.self,
+            forKey: .phase
+        ) {
+            phase = decodedPhase
+        } else {
+            let didAttempt = try container.decodeIfPresent(
+                Bool.self,
+                forKey: .didAttemptProcessRefresh
+            ) ?? false
+            phase = didAttempt ? .failed : .waitingForReturn
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(settingsOpenedAt, forKey: .settingsOpenedAt)
+        try container.encodeIfPresent(previousApplicationPID, forKey: .previousApplicationPID)
+        try container.encodeIfPresent(previousFinderExtensionPID, forKey: .previousFinderExtensionPID)
+        try container.encode(phase, forKey: .phase)
+    }
+}
+
+struct FullDiskAccessRecoveryStore {
+    private let fileURL: URL
+
+    init(fileURL: URL = defaultFileURL) {
+        self.fileURL = fileURL
+    }
+
+    func load() -> FullDiskAccessRecoveryRequest? {
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return try? JSONDecoder().decode(FullDiskAccessRecoveryRequest.self, from: data)
+    }
+
+    @discardableResult
+    func write(_ request: FullDiskAccessRecoveryRequest) -> Bool {
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try JSONEncoder().encode(request).write(to: fileURL, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    private static var defaultFileURL: URL {
+        PreferencesStore.sharedPreferencesURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("PermissionRecovery", isDirectory: true)
+            .appendingPathComponent("full-disk-access.json")
+    }
+}
+
+struct FinderExtensionRuntimeSnapshotStore {
+    static let notificationName = "\(AppConstants.bundleIdentifier).finderExtensionRuntimeSnapshotChanged"
+
+    private let fileURL: URL?
+
+    static var isAvailable: Bool {
+        defaultFileURL != nil
+    }
+
+    init(fileURL: URL? = defaultFileURL) {
+        self.fileURL = fileURL
+    }
+
+    static func load() -> FinderExtensionRuntimeSnapshot? {
+        Self().load()
+    }
+
+    @discardableResult
+    static func write(_ snapshot: FinderExtensionRuntimeSnapshot) -> Bool {
+        Self().write(snapshot)
+    }
+
+    static func remove() {
+        Self().remove()
+    }
+
+    func load() -> FinderExtensionRuntimeSnapshot? {
+        guard let fileURL else { return nil }
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return try? JSONDecoder().decode(FinderExtensionRuntimeSnapshot.self, from: data)
+    }
+
+    @discardableResult
+    func write(_ snapshot: FinderExtensionRuntimeSnapshot) -> Bool {
+        guard let fileURL else { return false }
+        do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try JSONEncoder().encode(snapshot).write(to: fileURL, options: .atomic)
+            Self.postNotification()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func remove() {
+        guard let fileURL else { return }
+        try? FileManager.default.removeItem(at: fileURL)
+        Self.postNotification()
+    }
+
+    private static var defaultFileURL: URL? {
+        ApplicationGroupAccessPolicy.sharedContainerURL()?
+            .appendingPathComponent("FinderExtensionRuntime", isDirectory: true)
+            .appendingPathComponent("snapshot.json")
+    }
+
+    private static func postNotification() {
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(notificationName as CFString),
+            nil,
+            nil,
+            true
+        )
     }
 }
 

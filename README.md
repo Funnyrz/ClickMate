@@ -71,7 +71,20 @@ ClickMate automatically checks the latest published GitHub Release at most once 
 
 When a newer version is available, ClickMate notifies you once for that version and directs you to a trusted GitHub release page so you can download and replace the app manually. It does not silently download or install updates. Automatic-check failures stay silent; manual checks report failure without preventing the installed app from continuing to work.
 
-Release downloads are currently unsigned and not notarized. macOS Gatekeeper may require explicit approval before the downloaded app can run.
+Release downloads must be built with a stable Developer ID Application identity and notarized. The main app, background Helper, and Finder Extension keep fixed bundle identifiers and the same Team ID so macOS permissions remain associated with the installed product across normal upgrades.
+
+## Package a Signed Release DMG
+
+Set a Developer ID Application identity and a `notarytool` keychain profile, then run:
+
+```sh
+export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+export CLICKMATE_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)'
+export CLICKMATE_NOTARY_PROFILE='clickmate-notary'
+Scripts/package_signed_dmg.sh
+```
+
+The script archives and exports the app through Xcode automatic Developer ID signing so the main app and Finder Extension receive authorized provisioning profiles for `group.com.zxacn`. It rejects missing profiles, application/team identifier mismatches, missing App Group authorization, unstable bundle identifiers, non-Developer-ID signatures, or components without hardened runtime. It verifies notarization and Gatekeeper assessment before producing a release artifact.
 
 ## Package an Unsigned DMG
 
@@ -81,13 +94,27 @@ The repository includes a helper script for creating a local unsigned DMG:
 Scripts/package_unsigned_dmg.sh
 ```
 
-The generated DMG is not Developer ID signed or notarized. macOS Gatekeeper may block the app on other machines unless the recipient explicitly trusts it or removes the quarantine attribute after copying it to `/Applications`.
+The generated DMG can be copied to `/Applications` for local functional diagnostics, including the basic Finder Extension menu in safe folders. Its ad-hoc identity can change after rebuilds, so macOS may require Accessibility, Screen Recording, and Full Disk Access again. The packaging script intentionally removes the App Group entitlement: custom Finder settings synchronization, runtime status sharing, and automatic permission verification are unavailable. Do not use it for release or permission-identity stability acceptance.
+
+## Package a Local Apple Development DMG
+
+Use one stable development team for the main app, Helper, and Finder Extension:
+
+```sh
+export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+# Optional: set an exact certificate SHA when multiple identities share a name.
+export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
+Scripts/package_development_dmg.sh
+```
+
+The script uses Xcode automatic signing instead of manually re-signing an unsigned app. It rejects missing provisioning profiles, application/team identifier entitlements, App Group authorization, hardened runtime, mismatched Team IDs or Bundle IDs, invalid nested signatures, and non-Universal binaries. This package is suitable for local Finder Extension and permission acceptance, but not for public distribution.
+Use the Team ID reported by `codesign`/the certificate subject OU; the text in a certificate display name can be misleading.
 
 ## Publish a GitHub Release Locally
 
 Install and authenticate GitHub CLI, and make sure `curl`, `jq`, and the Xcode command-line tools are available. Update `CFBundleShortVersionString` in both `ClickMate/Info.plist` and `ClickMateFinderExtension/Info.plist`, then commit the release changes.
 
-Create and push the release tag yourself before running the release script:
+Create and push the release tag yourself, configure `CLICKMATE_DEVELOPMENT_TEAM`, `CLICKMATE_SIGNING_IDENTITY`, and `CLICKMATE_NOTARY_PROFILE`, then run the release script:
 
 ```sh
 git tag -a v1.4 -m "Release v1.4"
@@ -95,9 +122,9 @@ git push origin v1.4
 Scripts/release_github.sh v1.4
 ```
 
-The script also accepts `1.4` and normalizes it to `v1.4`. It requires a clean working tree; verifies that both bundle versions match; confirms that the local and `origin` tags both point at `HEAD`; rejects an existing release or a version that is not strictly newer than the latest published GitHub release; runs the unsigned test suite; builds the DMG with `Scripts/package_unsigned_dmg.sh`; mounts it read-only to verify the app, Finder extension, versions, and `arm64` + `x86_64` executables; then creates the GitHub release and uploads the DMG.
+The script also accepts `1.4` and normalizes it to `v1.4`. It requires a clean working tree; verifies that both bundle versions match; confirms that the local and `origin` tags both point at `HEAD`; rejects an existing release or a version that is not strictly newer than the latest published GitHub release; runs the test suite; builds and notarizes the DMG with `Scripts/package_signed_dmg.sh`; mounts it read-only to verify the app, Finder extension, versions, and `arm64` + `x86_64` executables; then creates the GitHub release and uploads the signed artifact.
 
-`Scripts/release_github.sh` never creates, moves, or pushes tags. The uploaded DMG remains unsigned and not notarized, so release users are subject to the same Gatekeeper limitations described above.
+`Scripts/release_github.sh` never creates, moves, or pushes tags. It fails instead of falling back to an unsigned artifact when signing or notarization configuration is unavailable.
 
 ## Contributing
 

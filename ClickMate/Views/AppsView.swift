@@ -87,7 +87,8 @@ struct AppsView: View {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         if panel.runModal() == .OK, let url = panel.url {
-            store.preferences.pinnedApplicationPaths.append(url.path)
+            let paths = store.preferences.pinnedApplicationPaths + [url.path]
+            store.preferences.pinnedApplicationPaths = PinnedApplicationPathPolicy.normalizedPaths(paths)
         }
     }
 }

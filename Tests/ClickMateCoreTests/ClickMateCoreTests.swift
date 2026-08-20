@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class ClickMateCoreTests: XCTestCase {
@@ -154,6 +155,21 @@ final class ClickMateCoreTests: XCTestCase {
             "permissions.fullDiskAccessMissing",
             "permissions.fullDiskAccessDescription",
             "permissions.fullDiskAccessManualAdd",
+            "permissions.fullDiskAccessRestartRequired",
+            "permissions.fullDiskAccessApplying",
+            "permissions.fullDiskAccessApplied",
+            "permissions.fullDiskAccessAppliedDetail",
+            "permissions.fullDiskAccessApplyFailed",
+            "permissions.fullDiskAccessSystemManaged",
+            "permissions.fullDiskAccessExtensionNotReporting",
+            "permissions.fullDiskAccessExtensionRunning",
+            "permissions.finderPolicyUpdateRequired",
+            "permissions.finderPolicyReloading",
+            "permissions.finderPolicyReloadFailed",
+            "permissions.finderPolicyReloadTimedOut",
+            "permissions.finderRuntimeUnavailableStatus",
+            "permissions.sharedContainerUnavailable",
+            "permissions.finderMonitoringMigration",
             "permissions.completeGuide",
             "permissions.stepInstallTitle",
             "permissions.stepInstallDescription",
@@ -225,6 +241,93 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(AppConstants.finderExtensionBundleIdentifier, "com.zxacn.clickmate.FinderExtension")
     }
 
+    func testProvisioningProfileMustExplicitlyAuthorizeApplicationGroup() {
+        let authorizedProfile: [String: Any] = [
+            "Entitlements": [
+                "com.apple.security.application-groups": ["group.com.zxacn"]
+            ]
+        ]
+        let wildcardProfile: [String: Any] = [
+            "Entitlements": [
+                "com.apple.application-identifier": "AA8ZVDT74G.*"
+            ]
+        ]
+
+        XCTAssertTrue(ApplicationGroupAccessPolicy.profileAuthorizesApplicationGroup(
+            "group.com.zxacn",
+            propertyList: authorizedProfile
+        ))
+        XCTAssertFalse(ApplicationGroupAccessPolicy.profileAuthorizesApplicationGroup(
+            "group.com.zxacn",
+            propertyList: wildcardProfile
+        ))
+    }
+
+    func testProvisioningProfileIdentityMustMatchSignedBundle() {
+        let matchingProfile: [String: Any] = [
+            "TeamIdentifier": ["AA8ZVDT74G"],
+            "Entitlements": [
+                "com.apple.application-identifier": "AA8ZVDT74G.com.zxacn.clickmate",
+                "com.apple.developer.team-identifier": "AA8ZVDT74G",
+                "com.apple.security.application-groups": ["group.com.zxacn"]
+            ]
+        ]
+
+        XCTAssertTrue(ApplicationGroupAccessPolicy.profileAuthorizesApplicationGroup(
+            "group.com.zxacn",
+            bundleIdentifier: "com.zxacn.clickmate",
+            teamIdentifier: "AA8ZVDT74G",
+            propertyList: matchingProfile
+        ))
+        XCTAssertFalse(ApplicationGroupAccessPolicy.profileAuthorizesApplicationGroup(
+            "group.com.zxacn",
+            bundleIdentifier: "com.zxacn.clickmate.FinderExtension",
+            teamIdentifier: "AA8ZVDT74G",
+            propertyList: matchingProfile
+        ))
+        XCTAssertFalse(ApplicationGroupAccessPolicy.profileAuthorizesApplicationGroup(
+            "group.com.zxacn",
+            bundleIdentifier: "com.zxacn.clickmate",
+            teamIdentifier: "DIFFERENTTEAM",
+            propertyList: matchingProfile
+        ))
+    }
+
+    func testSharedContainerDoesNotCallProviderWhenApplicationGroupIsUnauthorized() {
+        var providerCallCount = 0
+
+        let resolvedURL = ApplicationGroupAccessPolicy.sharedContainerURL(
+            groupIdentifier: "group.com.zxacn",
+            authorizationProvider: { _, _ in false },
+            containerURLProvider: { _ in
+                providerCallCount += 1
+                return URL(fileURLWithPath: "/should-not-be-used", isDirectory: true)
+            }
+        )
+
+        XCTAssertNil(resolvedURL)
+        XCTAssertEqual(providerCallCount, 0)
+    }
+
+    func testSharedContainerCallsProviderAfterApplicationGroupAuthorization() throws {
+        let expectedURL = try makeTemporaryDirectory()
+        var providerCallCount = 0
+
+        let resolvedURL = ApplicationGroupAccessPolicy.sharedContainerURL(
+            groupIdentifier: "group.com.zxacn",
+            authorizationProvider: { _, identifier in
+                identifier == "group.com.zxacn"
+            },
+            containerURLProvider: { identifier in
+                providerCallCount += 1
+                return identifier == "group.com.zxacn" ? expectedURL : nil
+            }
+        )
+
+        XCTAssertEqual(resolvedURL, expectedURL)
+        XCTAssertEqual(providerCallCount, 1)
+    }
+
     func testLocalizationProviderOverridesBundleLanguage() {
         L10n.languageProvider = { .simplifiedChinese }
         addTeardownBlock {
@@ -263,24 +366,68 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(Set(order), Set(AppDetector.defaultApplicationOrder))
     }
 
-    func testDefaultMonitoredFoldersIncludeHomeAndCommonFolders() {
+    func testDefaultMonitoredFoldersExcludeHomeAndUserLibrary() {
         let home = MonitoredFolderPolicy.userHomeDirectory().resolvingSymlinksInPath().path
         let defaults = Set(MonitoredFolderPolicy.defaultMonitoredFolderPaths())
 
-        XCTAssertTrue(defaults.contains(home))
+        XCTAssertFalse(defaults.contains(home))
+        XCTAssertFalse(defaults.contains { $0 == "\(home)/Library" || $0.hasPrefix("\(home)/Library/") })
         XCTAssertTrue(defaults.contains(URL(fileURLWithPath: home).appendingPathComponent("Desktop").path))
         XCTAssertTrue(defaults.contains(URL(fileURLWithPath: home).appendingPathComponent("Documents").path))
         XCTAssertTrue(defaults.contains(URL(fileURLWithPath: home).appendingPathComponent("Downloads").path))
     }
 
-    func testBootstrapDirectoryURLsIncludeHomeAndCommonFolders() {
+    func testBootstrapDirectoryURLsExcludeHomeAndUserLibrary() {
         let home = MonitoredFolderPolicy.userHomeDirectory().standardizedFileURL
         let urls = Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap())
 
-        XCTAssertTrue(urls.contains(home))
+        XCTAssertFalse(urls.contains(home))
+        XCTAssertFalse(urls.contains { $0.path == home.appendingPathComponent("Library").path })
         XCTAssertTrue(urls.contains(home.appendingPathComponent("Desktop", isDirectory: true)))
         XCTAssertTrue(urls.contains(home.appendingPathComponent("Documents", isDirectory: true)))
         XCTAssertTrue(urls.contains(home.appendingPathComponent("Downloads", isDirectory: true)))
+    }
+
+    func testSafeTopLevelDirectoriesIncludeProjectsAndWorkspaceWithoutRecursing() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let projects = home.appendingPathComponent("Projects", isDirectory: true)
+        let workspace = home.appendingPathComponent("Workspace", isDirectory: true)
+        let nestedProject = projects.appendingPathComponent("Client/App", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedProject, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+
+        let urls = Set(MonitoredFolderPolicy.safeTopLevelDirectoryURLs(in: home))
+
+        XCTAssertTrue(urls.contains(projects))
+        XCTAssertTrue(urls.contains(workspace))
+        XCTAssertFalse(urls.contains(nestedProject))
+        XCTAssertFalse(urls.contains(projects.appendingPathComponent("Client", isDirectory: true)))
+    }
+
+    func testSafeTopLevelDirectoriesExcludeHomeLibraryHiddenPackagesAndLibrarySymlinks() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let hidden = home.appendingPathComponent(".Hidden", isDirectory: true)
+        let package = home.appendingPathComponent("Example.app", isDirectory: true)
+        let libraryLink = home.appendingPathComponent("Library Link", isDirectory: true)
+        let currentUserLibrary = MonitoredFolderPolicy.userHomeDirectory()
+            .appendingPathComponent("Library", isDirectory: true)
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: hidden, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: libraryLink, withDestinationURL: currentUserLibrary)
+
+        let urls = Set(MonitoredFolderPolicy.safeTopLevelDirectoryURLs(in: home))
+        let paths = Set(urls.map(\.path))
+
+        XCTAssertFalse(paths.contains(home.path))
+        XCTAssertFalse(paths.contains(library.path))
+        XCTAssertFalse(paths.contains(hidden.path))
+        XCTAssertFalse(paths.contains(package.path))
+        XCTAssertFalse(paths.contains(libraryLink.path))
+        XCTAssertFalse(paths.contains(currentUserLibrary.resolvingSymlinksInPath().path))
     }
 
     func testSystemPathsAreRejectedFromMonitoring() {
@@ -292,6 +439,17 @@ final class ClickMateCoreTests: XCTestCase {
 
         XCTAssertTrue(result.accepted.isEmpty)
         XCTAssertEqual(Set(result.rejected), ["/", "/System", "/Library"])
+    }
+
+    func testHomeAndUserLibraryAreRejectedFromMonitoring() {
+        let home = MonitoredFolderPolicy.userHomeDirectory().standardizedFileURL
+        let userLibrary = home.appendingPathComponent("Library", isDirectory: true)
+        let containers = userLibrary.appendingPathComponent("Containers", isDirectory: true)
+
+        let result = MonitoredFolderPolicy.acceptedAndRejectedPaths(from: [home, userLibrary, containers])
+
+        XCTAssertTrue(result.accepted.isEmpty)
+        XCTAssertEqual(Set(result.rejected), Set([home.path, userLibrary.path, containers.path]))
     }
 
     func testNormalizedMonitoringPathsDeduplicateAndResolveSymlink() throws {
@@ -306,7 +464,35 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(paths, [target.resolvingSymlinksInPath().path])
     }
 
-    func testWideCoverageUsesMountedVolumeRootsWithoutRecursing() throws {
+    func testFinderMonitoringMigrationRemovesHomeAndLibraryButKeepsProjectFolders() throws {
+        let home = MonitoredFolderPolicy.userHomeDirectory().standardizedFileURL
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let project = try makeTemporaryDirectory()
+        var preferences = ClickMatePreferences(
+            enabledCommands: Set(MenuCommand.allCases),
+            templates: FileTemplate.defaults,
+            monitoredFolderPaths: [home.path, library.path, project.path],
+            monitoredFolderBookmarks: [
+                home.path: Data("home".utf8),
+                library.path: Data("library".utf8),
+                project.path: Data("project".utf8)
+            ],
+            pinnedApplicationPaths: [],
+            hasAcknowledgedFinderMonitoringMigration: true,
+            finderMonitoringPolicyVersion: 1
+        )
+
+        XCTAssertTrue(preferences.migrateFinderMonitoringPolicyIfNeeded())
+        XCTAssertEqual(preferences.monitoredFolderPaths, [project.path])
+        XCTAssertEqual(Set(preferences.monitoredFolderBookmarks.keys), [project.path])
+        XCTAssertFalse(preferences.hasAcknowledgedFinderMonitoringMigration)
+        XCTAssertEqual(
+            preferences.finderMonitoringPolicyVersion,
+            ClickMatePreferences.currentFinderMonitoringPolicyVersion
+        )
+    }
+
+    func testWideCoverageDoesNotAutomaticallyRegisterMountedVolumeRoots() throws {
         let directory = try makeTemporaryDirectory()
         let volumesRoot = directory.appendingPathComponent("Volumes", isDirectory: true)
         let volume = volumesRoot.appendingPathComponent("External", isDirectory: true)
@@ -317,18 +503,18 @@ final class ClickMateCoreTests: XCTestCase {
             enabledCommands: Set(MenuCommand.allCases),
             templates: FileTemplate.defaults,
             monitoringMode: .wideCoverage,
-            monitoredFolderPaths: [volume.path],
+            monitoredFolderPaths: [],
             pinnedApplicationPaths: []
         )
 
         let urls = MonitoredFolderPolicy.effectiveDirectoryURLs(for: preferences, volumesRoot: volumesRoot)
         let paths = Set(urls.map { $0.path })
 
-        XCTAssertTrue(paths.contains(volume.path))
+        XCTAssertFalse(paths.contains(volume.path))
         XCTAssertFalse(paths.contains(nested.path))
     }
 
-    func testFinderSyncRegistrationExpandsChosenFolderDescendants() throws {
+    func testFinderSyncRegistrationUsesChosenRootWithoutEnumeratingDescendants() throws {
         let root = try makeTemporaryDirectory()
         let child = root.appendingPathComponent("Child", isDirectory: true)
         let grandchild = child.appendingPathComponent("Grandchild", isDirectory: true)
@@ -346,15 +532,13 @@ final class ClickMateCoreTests: XCTestCase {
         let urls = MonitoredFolderPolicy.finderSyncDirectoryURLs(
             for: preferences,
             hasFullDiskAccess: false,
-            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true),
-            maxDepth: 2,
-            maxDirectoryCount: 20
+            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true)
         )
         let paths = Set(urls.map(\.path))
 
         XCTAssertTrue(paths.contains(root.path))
-        XCTAssertTrue(paths.contains(child.path))
-        XCTAssertTrue(paths.contains(grandchild.path))
+        XCTAssertFalse(paths.contains(child.path))
+        XCTAssertFalse(paths.contains(grandchild.path))
     }
 
     func testFinderSyncRegistrationDoesNotExpandUnbookmarkedFolderWithoutFullDiskAccess() throws {
@@ -374,9 +558,7 @@ final class ClickMateCoreTests: XCTestCase {
         let urls = MonitoredFolderPolicy.finderSyncDirectoryURLs(
             for: preferences,
             hasFullDiskAccess: false,
-            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true),
-            maxDepth: 2,
-            maxDirectoryCount: 20
+            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true)
         )
         let paths = Set(urls.map(\.path))
 
@@ -384,7 +566,7 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertFalse(paths.contains(child.path))
     }
 
-    func testFinderSyncRegistrationExpandsUnbookmarkedFolderWithFullDiskAccess() throws {
+    func testFinderSyncRegistrationUsesUnbookmarkedRootWithFullDiskAccessWithoutEnumeration() throws {
         let root = try makeTemporaryDirectory()
         let child = root.appendingPathComponent("Child", isDirectory: true)
         try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
@@ -401,55 +583,12 @@ final class ClickMateCoreTests: XCTestCase {
         let urls = MonitoredFolderPolicy.finderSyncDirectoryURLs(
             for: preferences,
             hasFullDiskAccess: true,
-            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true),
-            maxDepth: 2,
-            maxDirectoryCount: 20
+            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true)
         )
         let paths = Set(urls.map(\.path))
 
         XCTAssertTrue(paths.contains(root.path))
-        XCTAssertTrue(paths.contains(child.path))
-    }
-
-    func testFinderSyncRegistrationHonorsDirectoryLimit() throws {
-        let root = try makeTemporaryDirectory()
-        for index in 0..<10 {
-            try FileManager.default.createDirectory(
-                at: root.appendingPathComponent("Folder\(index)", isDirectory: true),
-                withIntermediateDirectories: true
-            )
-        }
-
-        let urls = MonitoredFolderPolicy.expandedDirectoryURLs(
-            from: [root],
-            maxDepth: 1,
-            maxDirectoryCount: 5
-        )
-
-        XCTAssertLessThanOrEqual(urls.count, 5)
-        XCTAssertTrue(urls.map(\.path).contains(MonitoredFolderPolicy.canonicalPath(for: root)))
-    }
-
-    func testFinderSyncRegistrationSkipsUserLibraryDescendants() throws {
-        let root = try makeTemporaryDirectory()
-        let library = root.appendingPathComponent("Library", isDirectory: true)
-        let groupContainer = library.appendingPathComponent("Group Containers", isDirectory: true)
-        let documents = root.appendingPathComponent("Documents", isDirectory: true)
-        let nested = documents.appendingPathComponent("Nested", isDirectory: true)
-        try FileManager.default.createDirectory(at: groupContainer, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
-
-        let urls = MonitoredFolderPolicy.expandedDirectoryURLs(
-            from: [root],
-            maxDepth: 3,
-            maxDirectoryCount: 20
-        )
-        let paths = Set(urls.map(\.path))
-
-        XCTAssertFalse(paths.contains(MonitoredFolderPolicy.canonicalPath(for: library)))
-        XCTAssertFalse(paths.contains(MonitoredFolderPolicy.canonicalPath(for: groupContainer)))
-        XCTAssertTrue(paths.contains(MonitoredFolderPolicy.canonicalPath(for: documents)))
-        XCTAssertTrue(paths.contains(MonitoredFolderPolicy.canonicalPath(for: nested)))
+        XCTAssertFalse(paths.contains(child.path))
     }
 
     func testEffectiveMonitoringKeepsSavedPathsWithoutExtensionAccessCheck() throws {
@@ -846,7 +985,7 @@ final class ClickMateCoreTests: XCTestCase {
         )
     }
 
-    func testFinderExtensionReloadRegistersAndEnablesBundledExtension() async throws {
+    func testManualFinderExtensionReloadCompletesFromPlugInKitStatusWithoutRuntimeSnapshot() async throws {
         let appURL = try makeTemporaryDirectory().appendingPathComponent("ClickMate.app", isDirectory: true)
         let extensionURL = appURL
             .appendingPathComponent("Contents", isDirectory: true)
@@ -1031,6 +1170,255 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertNil(access)
     }
 
+    func testDiskAccessPolicyAttemptsDirectAccessOnlyForUserInitiatedOperations() throws {
+        let directory = try makeTemporaryDirectory()
+        let preferences = ClickMatePreferences(
+            enabledCommands: Set(MenuCommand.allCases),
+            templates: FileTemplate.defaults,
+            monitoredFolderPaths: [],
+            monitoredFolderBookmarks: [:],
+            pinnedApplicationPaths: []
+        )
+
+        let access = DiskAccessPolicy.scopedOrDirectAccess(
+            containing: directory,
+            preferences: preferences
+        )
+
+        XCTAssertEqual(access?.resolvedURL(for: directory), directory)
+        access?.stopAccessing()
+    }
+
+    func testDiskAccessStatusPrefersAccessibleProtectedProbe() {
+        let probes = [URL(fileURLWithPath: "/one"), URL(fileURLWithPath: "/two")]
+        let status = DiskAccessPolicy.status(probes: probes) { url in
+            url.path == "/two" ? .accessible : .permissionDenied
+        }
+
+        XCTAssertEqual(status, .granted)
+    }
+
+    func testDiskAccessStatusDoesNotProbeProtectedAppDataAutomatically() {
+        XCTAssertEqual(DiskAccessPolicy.status(), .unknown)
+        XCTAssertFalse(DiskAccessPolicy.hasFullDiskAccess())
+    }
+
+    func testDiskAccessStatusDistinguishesDeniedUnavailableAndUnknown() {
+        let probe = URL(fileURLWithPath: "/probe")
+
+        XCTAssertEqual(DiskAccessPolicy.status(probes: [probe]) { _ in .permissionDenied }, .denied)
+        XCTAssertEqual(DiskAccessPolicy.status(probes: [probe]) { _ in .unavailable }, .unavailable)
+        XCTAssertEqual(DiskAccessPolicy.status(probes: [probe]) { _ in .unknown }, .unknown)
+    }
+
+    func testFinderExtensionRuntimeSnapshotRoundTrips() throws {
+        let directory = try makeTemporaryDirectory()
+        let fileURL = directory.appendingPathComponent("finder-runtime.json")
+        let store = FinderExtensionRuntimeSnapshotStore(fileURL: fileURL)
+        let updatedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        let snapshot = FinderExtensionRuntimeSnapshot(
+            pid: 42,
+            version: "1.0 (1)",
+            updatedAt: updatedAt,
+            diskAccessStatus: .unknown,
+            lastAccessResult: .permissionDenied,
+            lastAccessAt: updatedAt
+        )
+
+        XCTAssertTrue(store.write(snapshot))
+        XCTAssertEqual(store.load(), snapshot)
+        XCTAssertEqual(
+            snapshot.monitoringPolicyVersion,
+            FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion
+        )
+    }
+
+    func testFinderExtensionRuntimeSnapshotStoreRequiresSharedLocation() {
+        let store = FinderExtensionRuntimeSnapshotStore(fileURL: nil)
+        let snapshot = FinderExtensionRuntimeSnapshot(
+            pid: 42,
+            version: "1.3.2 (7)",
+            diskAccessStatus: .unknown
+        )
+
+        XCTAssertFalse(store.write(snapshot))
+        XCTAssertNil(store.load())
+        store.remove()
+    }
+
+    func testFinderExtensionRuntimeSnapshotPolicyRequiresReloadedRunningProcess() {
+        let reloadStartedAt = Date(timeIntervalSinceReferenceDate: 2_000)
+        let referenceDate = reloadStartedAt.addingTimeInterval(1)
+        let snapshot = FinderExtensionRuntimeSnapshot(
+            pid: 84,
+            version: "1.3.2 (7)",
+            updatedAt: reloadStartedAt.addingTimeInterval(0.5),
+            diskAccessStatus: .unknown
+        )
+        let accepts: (FinderExtensionRuntimeSnapshot) -> Bool = { candidate in
+            FinderExtensionRuntimeSnapshotPolicy.accepts(
+                candidate,
+                currentVersion: "1.3.2 (7)",
+                previousPID: 42,
+                updatedAfter: reloadStartedAt,
+                referenceDate: referenceDate,
+                isExpectedRunningProcess: { $0 == 84 }
+            )
+        }
+
+        XCTAssertTrue(accepts(snapshot))
+
+        var previousProcess = snapshot
+        previousProcess.pid = 42
+        XCTAssertFalse(accepts(previousProcess))
+
+        var snapshotBeforeReload = snapshot
+        snapshotBeforeReload.updatedAt = reloadStartedAt.addingTimeInterval(-0.001)
+        XCTAssertFalse(accepts(snapshotBeforeReload))
+
+        var wrongVersion = snapshot
+        wrongVersion.version = "1.3.2 (6)"
+        XCTAssertFalse(accepts(wrongVersion))
+
+        var wrongPolicy = snapshot
+        wrongPolicy.monitoringPolicyVersion = FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion - 1
+        XCTAssertFalse(accepts(wrongPolicy))
+
+        XCTAssertFalse(FinderExtensionRuntimeSnapshotPolicy.accepts(
+            snapshot,
+            currentVersion: "1.3.2 (7)",
+            previousPID: 42,
+            updatedAfter: reloadStartedAt,
+            referenceDate: referenceDate,
+            isExpectedRunningProcess: { _ in false }
+        ))
+    }
+
+    func testFinderExtensionRuntimeSnapshotPolicyDoesNotExpireAStillRunningProcessByAge() {
+        let updatedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        let snapshot = FinderExtensionRuntimeSnapshot(
+            pid: 42,
+            version: "1.3.2 (7)",
+            updatedAt: updatedAt,
+            diskAccessStatus: .unknown
+        )
+
+        XCTAssertTrue(FinderExtensionRuntimeSnapshotPolicy.accepts(
+            snapshot,
+            currentVersion: "1.3.2 (7)",
+            updatedAfter: updatedAt,
+            referenceDate: updatedAt.addingTimeInterval(86_400),
+            isExpectedRunningProcess: { $0 == 42 }
+        ))
+    }
+
+    func testFinderExtensionRuntimeSnapshotDecodesLegacyHeartbeat() throws {
+        let json = """
+        {
+          "pid": 42,
+          "version": "1.3.2 (5)",
+          "updatedAt": 1000,
+          "diskAccessStatus": "unknown",
+          "monitoringPolicyVersion": 3
+        }
+        """
+
+        let snapshot = try JSONDecoder().decode(
+            FinderExtensionRuntimeSnapshot.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertNil(snapshot.lastAccessResult)
+        XCTAssertNil(snapshot.lastAccessAt)
+    }
+
+    func testFullDiskAccessRecoveryStorePersistsSingleRelaunchAndReload() throws {
+        let directory = try makeTemporaryDirectory()
+        let fileURL = directory.appendingPathComponent("full-disk-access.json")
+        let store = FullDiskAccessRecoveryStore(fileURL: fileURL)
+        var request = FullDiskAccessRecoveryRequest(
+            id: UUID(),
+            settingsOpenedAt: Date(timeIntervalSinceReferenceDate: 1_000),
+            previousApplicationPID: 42,
+            previousFinderExtensionPID: 84
+        )
+
+        XCTAssertTrue(store.write(request))
+        XCTAssertEqual(store.load(), request)
+        XCTAssertTrue(request.markRelaunchScheduled())
+        XCTAssertFalse(request.markRelaunchScheduled())
+        XCTAssertFalse(request.markExtensionReloadStarted(currentApplicationPID: 42))
+        XCTAssertTrue(request.markExtensionReloadStarted(currentApplicationPID: 43))
+        XCTAssertFalse(request.markExtensionReloadStarted(currentApplicationPID: 44))
+        XCTAssertTrue(store.write(request))
+        XCTAssertEqual(store.load(), request)
+
+        store.remove()
+        XCTAssertNil(store.load())
+    }
+
+    func testLegacyFullDiskAccessRecoveryStopsRepeatedAutomaticRecovery() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "settingsOpenedAt": 1000,
+          "didAttemptProcessRefresh": true
+        }
+        """
+
+        let request = try JSONDecoder().decode(
+            FullDiskAccessRecoveryRequest.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertEqual(request.phase, .failed)
+        XCTAssertNil(request.previousApplicationPID)
+        XCTAssertNil(request.previousFinderExtensionPID)
+    }
+
+    func testReadOnlyPreferencesStoreDoesNotCreateOrMigrateSharedFile() throws {
+        let directory = try makeTemporaryDirectory()
+        let fileURL = directory.appendingPathComponent("ClickMatePreferences.json")
+        var legacyPreferences = ClickMatePreferences.defaults
+        legacyPreferences.monitoredFolderPaths = [MonitoredFolderPolicy.userHomeDirectory().path]
+        legacyPreferences.finderMonitoringPolicyVersion = 1
+        let originalData = try JSONEncoder().encode(legacyPreferences)
+        try originalData.write(to: fileURL)
+
+        let store = PreferencesStore(fileURL: fileURL, allowsWrites: false)
+        store.waitForPendingSaves()
+
+        XCTAssertEqual(store.preferences.monitoredFolderPaths, [])
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+    }
+
+    func testLegacyFinderExtensionRuntimeSnapshotDecodesWithoutPolicyVersion() throws {
+        let json = """
+        {
+          "pid": 42,
+          "version": "1.3.2 (1)",
+          "updatedAt": 1000,
+          "diskAccessStatus": "unknown"
+        }
+        """
+
+        let snapshot = try JSONDecoder().decode(
+            FinderExtensionRuntimeSnapshot.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertNil(snapshot.monitoringPolicyVersion)
+    }
+
+    func testFinderExtensionPolicyRecoveryRunsAutomaticallyAtMostOnce() {
+        var tracker = FinderExtensionPolicyRecoveryTracker()
+
+        XCTAssertTrue(tracker.begin(isAutomatic: true))
+        XCTAssertFalse(tracker.begin(isAutomatic: true))
+        XCTAssertTrue(tracker.begin(isAutomatic: false))
+        XCTAssertTrue(tracker.begin(isAutomatic: false))
+    }
+
     func testScopedAccessToCurrentProcessURLIsSafeForPlainLocalFolder() throws {
         let directory = try makeTemporaryDirectory()
 
@@ -1046,6 +1434,193 @@ final class ClickMateCoreTests: XCTestCase {
         store.waitForPendingSaves()
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testPinnedApplicationSyncRejectsInvalidPathsAndCachesPublishedSnapshot() throws {
+        let directory = try makeTemporaryDirectory()
+        let applicationURL = try makeApplicationBundle(in: directory, name: "Pinned")
+        let invalidDirectory = directory.appendingPathComponent("NotAnApplication", isDirectory: true)
+        try FileManager.default.createDirectory(at: invalidDirectory, withIntermediateDirectories: true)
+        let missingApplicationURL = directory.appendingPathComponent("Missing.app", isDirectory: true)
+        let cacheFileURL = directory.appendingPathComponent("PinnedApplicationSync.json")
+        let pasteboardName = NSPasteboard.Name("com.zxacn.clickmate.tests.\(UUID().uuidString)")
+        NSPasteboard(name: pasteboardName).clearContents()
+
+        XCTAssertTrue(PinnedApplicationSyncStore.publish(
+            paths: [
+                applicationURL.path,
+                invalidDirectory.path,
+                missingApplicationURL.path,
+                applicationURL.path
+            ],
+            updatedAt: Date(timeIntervalSinceReferenceDate: 1_000),
+            pasteboardName: pasteboardName
+        ))
+
+        XCTAssertEqual(
+            PinnedApplicationSyncStore.synchronizedPaths(
+                cacheFileURL: cacheFileURL,
+                pasteboardName: pasteboardName
+            ),
+            [applicationURL.path]
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFileURL.path))
+
+        NSPasteboard(name: pasteboardName).clearContents()
+        XCTAssertEqual(
+            PinnedApplicationSyncStore.synchronizedPaths(
+                cacheFileURL: cacheFileURL,
+                pasteboardName: pasteboardName
+            ),
+            [applicationURL.path]
+        )
+    }
+
+    func testPinnedApplicationSyncPropagatesRemovalOfAllPinnedApplications() throws {
+        let directory = try makeTemporaryDirectory()
+        let applicationURL = try makeApplicationBundle(in: directory, name: "Pinned")
+        let cacheFileURL = directory.appendingPathComponent("PinnedApplicationSync.json")
+        let pasteboardName = NSPasteboard.Name("com.zxacn.clickmate.tests.\(UUID().uuidString)")
+        NSPasteboard(name: pasteboardName).clearContents()
+
+        XCTAssertTrue(PinnedApplicationSyncStore.publish(
+            paths: [applicationURL.path],
+            updatedAt: Date(timeIntervalSinceReferenceDate: 1_000),
+            pasteboardName: pasteboardName
+        ))
+        XCTAssertEqual(
+            PinnedApplicationSyncStore.synchronizedPaths(
+                cacheFileURL: cacheFileURL,
+                pasteboardName: pasteboardName
+            ),
+            [applicationURL.path]
+        )
+
+        XCTAssertTrue(PinnedApplicationSyncStore.publish(
+            paths: [],
+            updatedAt: Date(timeIntervalSinceReferenceDate: 2_000),
+            pasteboardName: pasteboardName
+        ))
+        XCTAssertEqual(
+            PinnedApplicationSyncStore.synchronizedPaths(
+                cacheFileURL: cacheFileURL,
+                pasteboardName: pasteboardName
+            ),
+            []
+        )
+    }
+
+    func testPinnedApplicationSyncPrefersNewerPublishedSnapshotOverCache() throws {
+        let directory = try makeTemporaryDirectory()
+        let oldApplicationURL = try makeApplicationBundle(in: directory, name: "OldPinned")
+        let newApplicationURL = try makeApplicationBundle(in: directory, name: "NewPinned")
+        let cacheFileURL = directory.appendingPathComponent("PinnedApplicationSync.json")
+        let pasteboardName = NSPasteboard.Name("com.zxacn.clickmate.tests.\(UUID().uuidString)")
+        NSPasteboard(name: pasteboardName).clearContents()
+        let oldSnapshot = PinnedApplicationSyncSnapshot(
+            paths: [oldApplicationURL.path],
+            updatedAt: Date(timeIntervalSinceReferenceDate: 1_000)
+        )
+        try JSONEncoder().encode(oldSnapshot).write(to: cacheFileURL)
+
+        XCTAssertTrue(PinnedApplicationSyncStore.publish(
+            paths: [newApplicationURL.path],
+            updatedAt: Date(timeIntervalSinceReferenceDate: 2_000),
+            pasteboardName: pasteboardName
+        ))
+
+        XCTAssertEqual(
+            PinnedApplicationSyncStore.synchronizedPaths(
+                cacheFileURL: cacheFileURL,
+                pasteboardName: pasteboardName
+            ),
+            [newApplicationURL.path]
+        )
+        let cachedSnapshot = try JSONDecoder().decode(
+            PinnedApplicationSyncSnapshot.self,
+            from: Data(contentsOf: cacheFileURL)
+        )
+        XCTAssertEqual(cachedSnapshot.paths, [newApplicationURL.path])
+    }
+
+    func testPinnedApplicationSyncPrefersPublishedSnapshotWhenTimestampsMatch() throws {
+        let directory = try makeTemporaryDirectory()
+        let cachedApplicationURL = try makeApplicationBundle(in: directory, name: "CachedPinned")
+        let publishedApplicationURL = try makeApplicationBundle(in: directory, name: "PublishedPinned")
+        let cacheFileURL = directory.appendingPathComponent("PinnedApplicationSync.json")
+        let pasteboardName = NSPasteboard.Name("com.zxacn.clickmate.tests.\(UUID().uuidString)")
+        NSPasteboard(name: pasteboardName).clearContents()
+        let timestamp = Date(timeIntervalSinceReferenceDate: 1_000)
+        let cachedSnapshot = PinnedApplicationSyncSnapshot(
+            paths: [cachedApplicationURL.path],
+            updatedAt: timestamp
+        )
+        try JSONEncoder().encode(cachedSnapshot).write(to: cacheFileURL)
+
+        XCTAssertTrue(PinnedApplicationSyncStore.publish(
+            paths: [publishedApplicationURL.path],
+            updatedAt: timestamp,
+            pasteboardName: pasteboardName
+        ))
+
+        XCTAssertEqual(
+            PinnedApplicationSyncStore.synchronizedPaths(
+                cacheFileURL: cacheFileURL,
+                pasteboardName: pasteboardName
+            ),
+            [publishedApplicationURL.path]
+        )
+    }
+
+    func testApplicationOpenRouteRoundTripsPinnedApplicationAndProjectURL() throws {
+        let directory = try makeTemporaryDirectory()
+        let applicationURL = try makeApplicationBundle(in: directory, name: "Pinned")
+        let projectURL = directory.appendingPathComponent("项目 Private", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let url = try XCTUnwrap(ApplicationOpenRoute.url(
+            pinnedApplicationPath: applicationURL.path,
+            urls: [projectURL]
+        ))
+
+        let route = try XCTUnwrap(ApplicationOpenRoute(url: url))
+
+        XCTAssertNil(route.command)
+        XCTAssertEqual(route.applicationPath, applicationURL.path)
+        XCTAssertEqual(route.urls, [projectURL])
+    }
+
+    func testApplicationOpenRouteRoundTripsDetectedApplicationCommand() throws {
+        let fileURL = URL(fileURLWithPath: "/Users/example/Project/readme.md")
+        let url = try XCTUnwrap(ApplicationOpenRoute.url(
+            command: .openVSCode,
+            urls: [fileURL]
+        ))
+
+        let route = try XCTUnwrap(ApplicationOpenRoute(url: url))
+
+        XCTAssertEqual(route.command, .openVSCode)
+        XCTAssertNil(route.applicationPath)
+        XCTAssertEqual(route.urls, [fileURL])
+    }
+
+    func testApplicationOpenRouteRejectsNonFileURLsAndUnpinnedApplications() throws {
+        XCTAssertNil(ApplicationOpenRoute.url(
+            command: .openVSCode,
+            urls: [try XCTUnwrap(URL(string: "https://example.com"))]
+        ))
+
+        let directory = try makeTemporaryDirectory()
+        let pinnedApplicationURL = try makeApplicationBundle(in: directory, name: "Pinned")
+        let otherApplicationURL = try makeApplicationBundle(in: directory, name: "Other")
+
+        XCTAssertTrue(ApplicationOpenRoute.isAuthorizedPinnedApplication(
+            path: pinnedApplicationURL.path,
+            pinnedApplicationPaths: [pinnedApplicationURL.path]
+        ))
+        XCTAssertFalse(ApplicationOpenRoute.isAuthorizedPinnedApplication(
+            path: otherApplicationURL.path,
+            pinnedApplicationPaths: [pinnedApplicationURL.path]
+        ))
     }
 
     private func makeTemporaryDirectory() throws -> URL {
@@ -1077,5 +1652,18 @@ final class ClickMateCoreTests: XCTestCase {
         try data.write(to: contentsURL.appendingPathComponent("Info.plist"))
 
         return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func makeApplicationBundle(in directory: URL, name: String) throws -> URL {
+        let applicationURL = directory.appendingPathComponent("\(name).app", isDirectory: true)
+        let contentsURL = applicationURL.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+        let info: [String: Any] = [
+            "CFBundleIdentifier": "com.zxacn.clickmate.tests.\(name.lowercased())",
+            "CFBundlePackageType": "APPL"
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try data.write(to: contentsURL.appendingPathComponent("Info.plist"))
+        return applicationURL
     }
 }

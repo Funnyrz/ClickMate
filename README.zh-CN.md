@@ -71,7 +71,20 @@ ClickMate 最多每 24 小时自动读取一次 GitHub 上最新的正式 Releas
 
 发现更高版本后，ClickMate 对同一版本只通知一次，并引导你前往可信的 GitHub Release 页面，由你手动下载并替换应用，不会静默下载或自动安装。自动检查失败时保持静默，手动检查会显示失败结果，但都不会影响当前已安装版本继续运行。
 
-当前发布产物未进行 Developer ID 签名和公证。下载后，macOS Gatekeeper 可能要求用户明确授权后才能运行。
+正式发布产物必须使用稳定的 Developer ID Application 身份签名并完成公证。主应用、后台 Helper 和 Finder Extension 使用固定 Bundle ID 与相同 Team ID，使 macOS 权限在正常覆盖升级后仍关联到同一产品身份。
+
+## 打包正式签名 DMG
+
+配置 Developer ID Application 身份和 `notarytool` 钥匙串配置后运行：
+
+```sh
+export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+export CLICKMATE_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)'
+export CLICKMATE_NOTARY_PROFILE='clickmate-notary'
+Scripts/package_signed_dmg.sh
+```
+
+脚本通过 Xcode 自动 Developer ID 签名进行归档和导出，使主应用与 Finder Extension 获得授权 `group.com.zxacn` 的描述文件。脚本会拒绝缺少描述文件、application/team identifier 不一致、App Group 未授权、Bundle ID 不稳定、非 Developer ID 签名或未启用 hardened runtime 的产物，并在生成正式包前验证公证票据和 Gatekeeper 评估。
 
 ## 打包未签名 DMG
 
@@ -81,13 +94,27 @@ ClickMate 最多每 24 小时自动读取一次 GitHub 上最新的正式 Releas
 Scripts/package_unsigned_dmg.sh
 ```
 
-该 DMG 没有经过 Developer ID 签名，也没有 notarized。在其他机器上运行时，macOS Gatekeeper 可能会拦截应用；接收者需要明确信任该应用，或在复制到 `/Applications` 后移除 quarantine 属性。
+该 DMG 可以复制到 `/Applications`，用于验证安全目录中的基础 Finder Extension 右键菜单。临时签名可能随重新构建变化，因此 macOS 可能再次要求辅助功能、屏幕录制和完全磁盘访问权限。打包脚本会主动移除 App Group entitlement，因此自定义 Finder 配置同步、运行状态共享和自动权限验证不可用。请勿将其用于正式发布或权限身份稳定性验收。
+
+## 打包本地 Apple Development DMG
+
+主应用、Helper 和 Finder Extension 必须使用同一个稳定开发团队：
+
+```sh
+export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+# 可选：存在多张同名证书时填写准确的证书 SHA。
+export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
+Scripts/package_development_dmg.sh
+```
+
+脚本使用 Xcode 自动签名，不再对无签名产物进行手工补签。它会拒绝缺少 provisioning profile、application/team identifier entitlement、App Group 授权、hardened runtime、Team ID 或 Bundle ID 不一致、嵌套签名无效以及非 Universal 2 的产物。该包可用于本机 Finder Extension 和权限验收，但不能用于公开分发。
+Team ID 应以 `codesign` 或证书 Subject OU 为准，不能只相信证书显示名称括号中的文本。
 
 ## 在本地发布 GitHub Release
 
 请先安装并登录 GitHub CLI，同时确保本机具备 `curl`、`jq` 和 Xcode 命令行工具。将 `ClickMate/Info.plist` 与 `ClickMateFinderExtension/Info.plist` 中的 `CFBundleShortVersionString` 更新为相同版本，并提交发布改动。
 
-运行发布脚本前，需要自行创建并推送 release tag：
+运行发布脚本前，需要配置 `CLICKMATE_DEVELOPMENT_TEAM`、`CLICKMATE_SIGNING_IDENTITY` 与 `CLICKMATE_NOTARY_PROFILE`，并自行创建和推送 release tag：
 
 ```sh
 git tag -a v1.4 -m "Release v1.4"
@@ -95,9 +122,9 @@ git push origin v1.4
 Scripts/release_github.sh v1.4
 ```
 
-脚本也接受 `1.4`，并会规范化为 `v1.4`。脚本要求工作区干净，并依次检查两个 bundle 版本一致且匹配输入版本、本地 tag 与 `origin` tag 都指向 `HEAD`、目标 Release 尚不存在、目标版本严格高于 GitHub 最新正式 Release；随后运行无签名测试，调用 `Scripts/package_unsigned_dmg.sh` 构建 DMG，以只读方式挂载并验证主应用、Finder extension、版本号以及 `arm64` + `x86_64` 可执行文件，最后创建 GitHub Release 并上传 DMG。
+脚本也接受 `1.4`，并会规范化为 `v1.4`。脚本要求工作区干净，并检查 bundle 版本、tag、目标 Release 和版本递增关系；随后运行测试，调用 `Scripts/package_signed_dmg.sh` 构建并公证 DMG，以只读方式挂载验证主应用、Helper、Finder Extension、版本号以及 `arm64` + `x86_64` 可执行文件，最后创建 GitHub Release 并上传正式签名 DMG。
 
-`Scripts/release_github.sh` 不会创建、移动或推送 tag。上传的 DMG 仍未签名、未公证，发布用户同样会受到前述 Gatekeeper 限制。
+`Scripts/release_github.sh` 不会创建、移动或推送 tag，并且在缺少正式签名或公证配置时直接失败，不会回退上传临时签名产物。
 
 ## 贡献
 

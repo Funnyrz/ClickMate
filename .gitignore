@@ -38,3 +38,4 @@ Carthage/Build/
 .vscode/
 .omx/
 Scripts/release_github.sh
+.idea/

@@ -47,17 +47,23 @@ enum ScreenshotError: LocalizedError {
 
 @MainActor
 final class ScreenshotService {
+    private let captureAccessProvider: () -> Bool
+
+    init(captureAccessProvider: @escaping () -> Bool = { CGPreflightScreenCaptureAccess() }) {
+        self.captureAccessProvider = captureAccessProvider
+    }
+
     func screenUnderMouse() -> NSScreen? {
         let mouseLocation = NSEvent.mouseLocation
         return NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) ?? NSScreen.main
     }
 
-    func requestCaptureAccess() -> Bool {
-        CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
+    func hasCaptureAccess() -> Bool {
+        captureAccessProvider()
     }
 
     func capture(screen: NSScreen, selection: CGRect? = nil) async throws -> CGImage {
-        guard requestCaptureAccess() else {
+        guard hasCaptureAccess() else {
             throw ScreenshotError.permissionDenied
         }
 
@@ -102,6 +108,21 @@ final class ScreenshotService {
         } catch {
             throw ScreenshotError.captureFailed(error)
         }
+    }
+
+    func captureRegion(screen: NSScreen, selection: CGRect) async throws -> CGImage {
+        let screenBounds = CGRect(origin: .zero, size: screen.frame.size)
+        let normalized = selection.standardized.intersection(screenBounds)
+        guard !normalized.isNull, normalized.width >= 2, normalized.height >= 2 else {
+            throw ScreenshotError.invalidSelection
+        }
+        let sourceRect = CGRect(
+            x: normalized.minX,
+            y: screenBounds.height - normalized.maxY,
+            width: normalized.width,
+            height: normalized.height
+        )
+        return try await capture(screen: screen, selection: sourceRect)
     }
 
     func copyToPasteboard(_ image: CGImage) throws {
@@ -239,6 +260,7 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
         case idle
         case selecting
         case capturing
+        case previewing
     }
 
     static let shared = ScreenshotCoordinator()
@@ -252,6 +274,7 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
     private let service: ScreenshotService
     private var captureTask: Task<Void, Never>?
     private var selectionController: ScreenshotSelectionController?
+    private var longScreenshotPreviewController: LongScreenshotPreviewWindowController?
     private var captureGeneration = 0
 
     init(service: ScreenshotService = ScreenshotService()) {
@@ -277,21 +300,32 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
         captureTask = nil
         selectionController?.dismiss()
         selectionController = nil
+        longScreenshotPreviewController?.close()
+        longScreenshotPreviewController = nil
         state = .idle
     }
 
+    func bringPreviewToFront() {
+        longScreenshotPreviewController?.bringToFront()
+    }
+
     private func startCapture(_ mode: ScreenshotCaptureMode) {
+        if state == .previewing {
+            bringPreviewToFront()
+            return
+        }
         guard state == .idle else {
             report(message: L10n.string("quickFeatures.screenshotInProgress"), resetState: false)
             return
         }
-        guard service.requestCaptureAccess() else {
+        guard service.hasCaptureAccess() else {
             report(ScreenshotError.permissionDenied)
             return
         }
 
         captureGeneration += 1
         let generation = captureGeneration
+        let targetProcessIdentifier = NSWorkspace.shared.frontmostApplication?.processIdentifier
         lastErrorMessage = nil
         guard let screen = service.screenUnderMouse() else {
             report(ScreenshotError.displayUnavailable)
@@ -299,13 +333,28 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
         }
         switch mode {
         case .region:
-            prepareSelection(screen: screen, initialFullScreen: false, generation: generation)
+            prepareSelection(
+                screen: screen,
+                initialFullScreen: false,
+                targetProcessIdentifier: targetProcessIdentifier,
+                generation: generation
+            )
         case .fullScreen:
-            prepareSelection(screen: screen, initialFullScreen: true, generation: generation)
+            prepareSelection(
+                screen: screen,
+                initialFullScreen: true,
+                targetProcessIdentifier: targetProcessIdentifier,
+                generation: generation
+            )
         }
     }
 
-    private func prepareSelection(screen: NSScreen, initialFullScreen: Bool, generation: Int) {
+    private func prepareSelection(
+        screen: NSScreen,
+        initialFullScreen: Bool,
+        targetProcessIdentifier: pid_t?,
+        generation: Int
+    ) {
         state = .capturing
         captureTask = Task { [weak self] in
             guard let self else { return }
@@ -321,6 +370,10 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
                     initialSelection: initialFullScreen
                         ? CGRect(origin: .zero, size: screen.frame.size)
                         : nil,
+                    targetProcessIdentifier: targetProcessIdentifier,
+                    captureRegion: { [service] screen, selection in
+                        try await service.captureRegion(screen: screen, selection: selection)
+                    },
                     defaultFileName: { [service] in service.defaultFileName() },
                     copyImage: { [service] output in try service.copyToPasteboard(output) },
                     saveImage: { [service] output, destination in
@@ -339,6 +392,16 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
                     },
                     onError: { [weak self] error in
                         self?.report(error, resetState: false)
+                    },
+                    onLongScreenshotCompleted: { [weak self] image, reachedLimit in
+                        guard let self, generation == captureGeneration else { return }
+                        selectionController = nil
+                        presentLongScreenshotPreview(
+                            image: image,
+                            screen: screen,
+                            reachedLimit: reachedLimit,
+                            generation: generation
+                        )
                     }
                 )
                 selectionController = controller
@@ -352,6 +415,40 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
                 captureTask = nil
                 report(error)
             }
+        }
+    }
+
+    private func presentLongScreenshotPreview(
+        image: CGImage,
+        screen: NSScreen,
+        reachedLimit: Bool,
+        generation: Int
+    ) {
+        state = .previewing
+        let controller = LongScreenshotPreviewWindowController(
+            screen: screen,
+            image: image,
+            defaultFileName: { [service] in service.defaultFileName() },
+            copyImage: { [service] output in try service.copyToPasteboard(output) },
+            saveImage: { [service] output, destination in
+                try service.savePNG(output, to: destination)
+            },
+            onClose: { [weak self] in
+                guard let self, generation == captureGeneration else { return }
+                longScreenshotPreviewController = nil
+                state = .idle
+            },
+            onError: { [weak self] error in
+                self?.report(error, resetState: false)
+            },
+            onOutputSuccess: { [weak self] in
+                self?.completionHandler?()
+            }
+        )
+        longScreenshotPreviewController = controller
+        controller.present()
+        if reachedLimit {
+            report(LongScreenshotCaptureError.limitReached, resetState: false)
         }
     }
 

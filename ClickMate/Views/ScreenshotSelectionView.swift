@@ -4,36 +4,48 @@ import UniformTypeIdentifiers
 @MainActor
 final class ScreenshotSelectionController {
     private let model: ScreenshotSessionModel
+    private let screen: NSScreen
+    private let targetProcessIdentifier: pid_t?
+    private let captureRegion: @MainActor (NSScreen, CGRect) async throws -> CGImage
     private let defaultFileName: () -> String
     private let copyImage: (CGImage) throws -> Void
     private let saveImage: (CGImage, URL) throws -> Void
     private var onCompleted: (() -> Void)?
     private var onCancel: (() -> Void)?
     private var onError: ((Error) -> Void)?
+    private var onLongScreenshotCompleted: ((CGImage, Bool) -> Void)?
     private var panel: ScreenshotSelectionPanel?
     private weak var selectionView: ScreenshotSelectionView?
+    private var longScreenshotController: LongScreenshotCaptureController?
     private var isFinishing = false
 
     init(
         screen: NSScreen,
         image: CGImage,
         initialSelection: CGRect? = nil,
+        targetProcessIdentifier: pid_t?,
+        captureRegion: @escaping @MainActor (NSScreen, CGRect) async throws -> CGImage,
         defaultFileName: @escaping () -> String,
         copyImage: @escaping (CGImage) throws -> Void,
         saveImage: @escaping (CGImage, URL) throws -> Void,
         onCompleted: @escaping () -> Void,
         onCancel: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
+        onLongScreenshotCompleted: @escaping (CGImage, Bool) -> Void
     ) {
         let sessionModel = ScreenshotSessionModel(image: image, screenSize: screen.frame.size)
         sessionModel.setSelection(initialSelection)
         model = sessionModel
+        self.screen = screen
+        self.targetProcessIdentifier = targetProcessIdentifier
+        self.captureRegion = captureRegion
         self.defaultFileName = defaultFileName
         self.copyImage = copyImage
         self.saveImage = saveImage
         self.onCompleted = onCompleted
         self.onCancel = onCancel
         self.onError = onError
+        self.onLongScreenshotCompleted = onLongScreenshotCompleted
 
         let selectionView = ScreenshotSelectionView(
             frame: CGRect(origin: .zero, size: screen.frame.size),
@@ -43,6 +55,9 @@ final class ScreenshotSelectionController {
         selectionView.onCopy = { [weak self] in self?.copySelection() }
         selectionView.onSave = { [weak self] in self?.presentSavePanel() }
         selectionView.onCancel = { [weak self] in self?.cancel() }
+        selectionView.onStartLongScreenshot = { [weak self] selection in
+            self?.startLongScreenshot(selection: selection)
+        }
         self.selectionView = selectionView
         self.panel = panel
     }
@@ -58,6 +73,9 @@ final class ScreenshotSelectionController {
         onCompleted = nil
         onCancel = nil
         onError = nil
+        onLongScreenshotCompleted = nil
+        longScreenshotController?.cancel()
+        longScreenshotController = nil
         closePanel()
     }
 
@@ -102,6 +120,47 @@ final class ScreenshotSelectionController {
         finish(completed: false)
     }
 
+    private func startLongScreenshot(selection: CGRect) {
+        guard !isFinishing, longScreenshotController == nil, let panel else { return }
+        panel.orderOut(nil)
+        let controller = LongScreenshotCaptureController(
+            screen: screen,
+            selection: selection,
+            targetProcessIdentifier: targetProcessIdentifier,
+            capture: { [captureRegion, screen] in
+                try await captureRegion(screen, selection)
+            },
+            onCompleted: { [weak self] image, reachedLimit in
+                guard let self else { return }
+                longScreenshotController = nil
+                finishLongScreenshot(image: image, reachedLimit: reachedLimit)
+            },
+            onCancelled: { [weak self] in
+                self?.longScreenshotController = nil
+                self?.cancel()
+            },
+            onError: { [weak self] error in
+                self?.onError?(error)
+            }
+        )
+        longScreenshotController = controller
+        controller.start()
+    }
+
+    private func finishLongScreenshot(image: CGImage, reachedLimit: Bool) {
+        guard !isFinishing else { return }
+        isFinishing = true
+        let completion = onLongScreenshotCompleted
+        onCompleted = nil
+        onCancel = nil
+        onError = nil
+        onLongScreenshotCompleted = nil
+        closePanel()
+        DispatchQueue.main.async {
+            completion?(image, reachedLimit)
+        }
+    }
+
     private func finish(completed: Bool) {
         guard !isFinishing else { return }
         isFinishing = true
@@ -109,6 +168,7 @@ final class ScreenshotSelectionController {
         onCompleted = nil
         onCancel = nil
         onError = nil
+        onLongScreenshotCompleted = nil
         closePanel()
         DispatchQueue.main.async {
             completion?()
@@ -116,6 +176,8 @@ final class ScreenshotSelectionController {
     }
 
     private func closePanel() {
+        longScreenshotController?.cancel()
+        longScreenshotController = nil
         NSCursor.arrow.set()
         panel?.orderOut(nil)
         panel?.close()
@@ -223,18 +285,20 @@ enum ScreenshotToolbarAppearance {
 enum ScreenshotToolbarVisual: Equatable {
     case symbol(String)
     case viewfinder
+    case scrollingCapture
     case text(String)
     case color(ScreenshotAnnotationColor)
     case strokeWidth(CGFloat)
 
     static let fullScreen: ScreenshotToolbarVisual = .viewfinder
-    static let textTool: ScreenshotToolbarVisual = .text("字")
+    static let longScreenshot: ScreenshotToolbarVisual = .scrollingCapture
+    static let textTool: ScreenshotToolbarVisual = .text("A")
 
     var isCircularControl: Bool {
         switch self {
         case .color, .strokeWidth:
             return true
-        case .symbol, .viewfinder, .text:
+        case .symbol, .viewfinder, .scrollingCapture, .text:
             return false
         }
     }
@@ -282,12 +346,55 @@ enum ScreenshotToolbarGeometry {
             (CGPoint(x: iconFrame.maxX, y: iconFrame.minY), CGPoint(x: iconFrame.maxX, y: iconFrame.minY + length))
         ]
     }
+
+    static func scrollingPageFrame(in frame: CGRect) -> CGRect {
+        let iconFrame = centeredSquare(in: frame, side: 18)
+        return CGRect(
+            x: iconFrame.midX - 6.5,
+            y: iconFrame.midY - 9,
+            width: 13,
+            height: 18
+        )
+    }
+
+    static func scrollingPageLines(in frame: CGRect) -> [(CGPoint, CGPoint)] {
+        let page = scrollingPageFrame(in: frame)
+        return [4.5, 8, 11.5].map { offset in
+            (
+                CGPoint(x: page.minX + 3, y: page.maxY - offset),
+                CGPoint(x: page.maxX - 3, y: page.maxY - offset)
+            )
+        }
+    }
+
+    static func tooltipFrame(anchor: CGRect, size: CGSize, in bounds: CGRect) -> CGRect {
+        let margin: CGFloat = 8
+        let spacing: CGFloat = 6
+        let width = min(size.width, max(bounds.width - margin * 2, 1))
+        let height = min(size.height, max(bounds.height - margin * 2, 1))
+        let x = min(
+            max(anchor.midX - width / 2, bounds.minX + margin),
+            bounds.maxX - width - margin
+        )
+        let above = anchor.maxY + spacing
+        let below = anchor.minY - height - spacing
+        let y: CGFloat
+        if above + height <= bounds.maxY - margin {
+            y = above
+        } else if below >= bounds.minY + margin {
+            y = below
+        } else {
+            y = min(max(above, bounds.minY + margin), bounds.maxY - height - margin)
+        }
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
 }
 
 private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onStartLongScreenshot: ((CGRect) -> Void)?
 
     private enum SelectionInteraction {
         case creating(anchor: CGPoint)
@@ -297,6 +404,7 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
 
     private enum ToolbarAction: Equatable {
         case fullScreen
+        case longScreenshot
         case edit
         case tool(ScreenshotTool)
         case color(ScreenshotAnnotationColor)
@@ -317,18 +425,20 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private let model: ScreenshotSessionModel
-    private let image: NSImage
+    private let backgroundImage: NSImage
     private var selectionInteraction: SelectionInteraction?
     private var annotationStart: CGPoint?
     private var annotationPoints: [CGPoint] = []
     private var draftTextField: NSTextField?
     private var toolbarItems: [ToolbarItem] = []
     private var hoveredToolbarAction: ToolbarAction?
+    private var displayedToolbarTooltip: String?
+    private var tooltipWorkItem: DispatchWorkItem?
     private var trackingArea: NSTrackingArea?
 
     init(frame: CGRect, model: ScreenshotSessionModel) {
         self.model = model
-        image = NSImage(cgImage: model.originalImage, size: frame.size)
+        backgroundImage = NSImage(cgImage: model.originalImage, size: frame.size)
         super.init(frame: frame)
     }
 
@@ -357,15 +467,15 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let hoveredItem = toolbarItems.first(where: { $0.frame.contains(point) })
-        toolTip = hoveredItem?.tooltip
         if hoveredToolbarAction != hoveredItem?.action {
             hoveredToolbarAction = hoveredItem?.action
+            scheduleToolbarTooltip(for: hoveredItem)
             needsDisplay = true
         }
     }
 
     override func mouseExited(with event: NSEvent) {
-        toolTip = nil
+        hideToolbarTooltip()
         hoveredToolbarAction = nil
         needsDisplay = true
     }
@@ -381,14 +491,14 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        drawImage()
+        drawBackgroundImage()
         NSColor.black.withAlphaComponent(0.46).setFill()
         bounds.fill()
 
         if let selection = model.selection {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(rect: selection).addClip()
-            drawImage()
+            drawBackgroundImage()
             drawAnnotations(model.annotations)
             if let draft = draftAnnotation() {
                 drawAnnotations([draft])
@@ -530,9 +640,18 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private func perform(_ action: ToolbarAction) {
+        hideToolbarTooltip()
         switch action {
         case .fullScreen:
             model.setSelection(bounds)
+        case .longScreenshot:
+            guard !model.isLongScreenshot, let selection = model.selection,
+                  selection.width >= 2, selection.height >= 2
+            else {
+                NSSound.beep()
+                return
+            }
+            onStartLongScreenshot?(selection)
         case .edit:
             guard model.selection != nil else {
                 NSSound.beep()
@@ -605,13 +724,17 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
         switch model.selectedTool {
         case .rectangle:
             let rectangle = rect(from: start, to: end)
-            return rectangle.width >= 2 && rectangle.height >= 2 ? .rectangle(rectangle, model.style) : nil
+            return rectangle.width >= 2 && rectangle.height >= 2
+                ? .rectangle(rectangle, model.style)
+                : nil
         case .arrow:
             return hypot(end.x - start.x, end.y - start.y) >= 2
                 ? .arrow(start: start, end: end, style: model.style)
                 : nil
         case .pen:
-            return annotationPoints.count >= 2 ? .pen(points: annotationPoints, style: model.style) : nil
+            return annotationPoints.count >= 2
+                ? .pen(points: annotationPoints, style: model.style)
+                : nil
         case .text:
             return nil
         case .mosaic:
@@ -713,9 +836,9 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
         }
     }
 
-    private func drawImage() {
+    private func drawBackgroundImage() {
         NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
+        backgroundImage.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
     }
 
     private func drawAnnotations(_ annotations: [ScreenshotAnnotation]) {
@@ -861,6 +984,64 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
         for item in toolbarItems {
             drawToolbarItem(item)
         }
+        drawToolbarTooltip()
+    }
+
+    private func scheduleToolbarTooltip(for item: ToolbarItem?) {
+        tooltipWorkItem?.cancel()
+        tooltipWorkItem = nil
+        displayedToolbarTooltip = nil
+        guard let item else { return }
+        let action = item.action
+        let tooltip = item.tooltip
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, hoveredToolbarAction == action else { return }
+            displayedToolbarTooltip = tooltip
+            needsDisplay = true
+        }
+        tooltipWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: workItem)
+    }
+
+    private func hideToolbarTooltip() {
+        tooltipWorkItem?.cancel()
+        tooltipWorkItem = nil
+        displayedToolbarTooltip = nil
+    }
+
+    private func drawToolbarTooltip() {
+        guard let displayedToolbarTooltip,
+              let hoveredItem = toolbarItems.first(where: { $0.action == hoveredToolbarAction })
+        else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white
+        ]
+        let text = displayedToolbarTooltip as NSString
+        let measured = text.size(withAttributes: attributes)
+        let bubbleSize = CGSize(
+            width: min(max(measured.width + 18, 44), 240),
+            height: measured.height + 10
+        )
+        let frame = ScreenshotToolbarGeometry.tooltipFrame(
+            anchor: hoveredItem.frame,
+            size: bubbleSize,
+            in: bounds
+        )
+
+        NSColor.black.withAlphaComponent(0.92).setFill()
+        let background = NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6)
+        background.fill()
+        NSColor.white.withAlphaComponent(0.16).setStroke()
+        background.lineWidth = 1
+        background.stroke()
+
+        let textOrigin = CGPoint(
+            x: frame.midX - measured.width / 2,
+            y: frame.midY - measured.height / 2
+        )
+        text.draw(at: textOrigin, withAttributes: attributes)
     }
 
     private func makeToolbarItems(in frame: CGRect) -> [ToolbarItem] {
@@ -918,6 +1099,7 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
             gap()
         } else {
             add(.fullScreen, .fullScreen, "screenshot.fullScreen")
+            add(.longScreenshot, .longScreenshot, "screenshot.long")
             add(.edit, .symbol("pencil.tip"), "screenshot.edit")
             gap()
         }
@@ -949,7 +1131,7 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
         case .clear:
             isSelected = false
             isEnabled = model.canClear
-        case .edit, .save, .copy:
+        case .edit, .longScreenshot, .save, .copy:
             isSelected = false
             isEnabled = validSelection
         default:
@@ -993,6 +1175,8 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
             drawSymbol(name, in: item, isEnabled: isEnabled)
         case .viewfinder:
             drawViewfinder(in: item, isEnabled: isEnabled)
+        case .scrollingCapture:
+            drawScrollingCapture(in: item, isEnabled: isEnabled)
         case let .text(text):
             drawTextGlyph(text, in: item, isEnabled: isEnabled)
         }
@@ -1051,6 +1235,35 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
         path.stroke()
     }
 
+    private func drawScrollingCapture(in item: ToolbarItem, isEnabled: Bool) {
+        let color = iconColor(for: item.action, isEnabled: isEnabled)
+        let page = ScreenshotToolbarGeometry.scrollingPageFrame(in: item.frame)
+        color.setStroke()
+        let outline = NSBezierPath(roundedRect: page, xRadius: 2.5, yRadius: 2.5)
+        outline.lineWidth = 1.6
+        outline.stroke()
+
+        let content = NSBezierPath()
+        for segment in ScreenshotToolbarGeometry.scrollingPageLines(in: item.frame) {
+            content.move(to: segment.0)
+            content.line(to: segment.1)
+        }
+        content.lineWidth = 1.2
+        content.lineCapStyle = .round
+        content.stroke()
+
+        color.setFill()
+        let dotY = page.minY + 2.3
+        for offset in [-2.5, 0, 2.5] as [CGFloat] {
+            NSBezierPath(ovalIn: CGRect(
+                x: page.midX + offset - 0.65,
+                y: dotY - 0.65,
+                width: 1.3,
+                height: 1.3
+            )).fill()
+        }
+    }
+
     private func drawTextGlyph(_ text: String, in item: ToolbarItem, isEnabled: Bool) {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 16, weight: .semibold),
@@ -1068,7 +1281,7 @@ private final class ScreenshotSelectionView: NSView, NSTextFieldDelegate {
         ScreenshotToolbarLayout.frame(
             selection: model.selection,
             in: bounds,
-            size: CGSize(width: model.isEditing ? 668 : 198, height: 46)
+            size: CGSize(width: model.isEditing ? 668 : 236, height: 46)
         )
     }
 

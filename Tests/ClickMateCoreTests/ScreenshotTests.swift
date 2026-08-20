@@ -5,6 +5,18 @@ import XCTest
 
 final class ScreenshotTests: XCTestCase {
     @MainActor
+    func testScreenshotAccessCheckUsesPreflightProviderWithoutRequestingPermission() {
+        var readCount = 0
+        let service = ScreenshotService(captureAccessProvider: {
+            readCount += 1
+            return false
+        })
+
+        XCTAssertFalse(service.hasCaptureAccess())
+        XCTAssertEqual(readCount, 1)
+    }
+
+    @MainActor
     func testSelectionRenderConvertsScreenPointsToRetinaPixels() throws {
         let model = ScreenshotSessionModel(
             image: try makeSolidImage(width: 200, height: 100),
@@ -148,9 +160,10 @@ final class ScreenshotTests: XCTestCase {
         )
     }
 
-    func testToolbarUsesViewfinderAndChineseTextGlyph() {
+    func testToolbarUsesDistinctCaptureIconsAndLanguageNeutralTextGlyph() {
         XCTAssertEqual(ScreenshotToolbarVisual.fullScreen, .viewfinder)
-        XCTAssertEqual(ScreenshotToolbarVisual.textTool, .text("字"))
+        XCTAssertEqual(ScreenshotToolbarVisual.longScreenshot, .scrollingCapture)
+        XCTAssertEqual(ScreenshotToolbarVisual.textTool, .text("A"))
     }
 
     func testToolbarButtonsAndSelectionDotsUseSquareGeometry() {
@@ -177,6 +190,16 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(segments.allSatisfy { buttonFrame.contains($0.0) && buttonFrame.contains($0.1) })
         XCTAssertTrue(buttonFrame.contains(fitted))
         XCTAssertEqual(fitted.width / fitted.height, 22.0 / 17.0, accuracy: 0.001)
+    }
+
+    func testScrollingCaptureIconGeometryStaysInsideButton() {
+        let buttonFrame = CGRect(x: 0, y: 0, width: 32, height: 32)
+        let page = ScreenshotToolbarGeometry.scrollingPageFrame(in: buttonFrame)
+        let lines = ScreenshotToolbarGeometry.scrollingPageLines(in: buttonFrame)
+
+        XCTAssertTrue(buttonFrame.contains(page))
+        XCTAssertEqual(lines.count, 3)
+        XCTAssertTrue(lines.allSatisfy { page.contains($0.0) && page.contains($0.1) })
     }
 
     func testEightResizeHandlesMapToSelectionEdges() {
@@ -232,6 +255,134 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(name.hasSuffix(".png"))
     }
 
+    func testLongScreenshotMatchesKnownVerticalOffsetAndBuildsFinalImage() throws {
+        let first = try makeScrollingImage(width: 96, height: 80, contentOffset: 0)
+        let second = try makeScrollingImage(width: 96, height: 80, contentOffset: 25)
+        let stitcher = try LongScreenshotStitcher(firstFrame: first)
+
+        let result = try stitcher.append(second)
+        let finalImage = try stitcher.makeImage()
+
+        guard case let .appended(match) = result else {
+            return XCTFail("Expected appended frame, got \(result)")
+        }
+        XCTAssertEqual(match.verticalOffset, 25)
+        XCTAssertEqual(match.overlapHeight, 55)
+        XCTAssertGreaterThan(match.confidence, 0.9)
+        XCTAssertEqual(stitcher.frameCount, 2)
+        XCTAssertEqual(stitcher.pixelHeight, 105)
+        XCTAssertEqual(finalImage.width, 96)
+        XCTAssertEqual(finalImage.height, 105)
+        XCTAssertEqual(
+            try normalizedRGBA(finalImage),
+            try normalizedRGBA(makeScrollingImage(width: 96, height: 105, contentOffset: 0))
+        )
+    }
+
+    func testLongScreenshotRecognizesDuplicateWithoutGrowingCanvas() throws {
+        let image = try makeScrollingImage(width: 72, height: 64, contentOffset: 10)
+        let stitcher = try LongScreenshotStitcher(firstFrame: image)
+
+        let result = try stitcher.append(image)
+
+        XCTAssertEqual(result, .duplicate)
+        XCTAssertEqual(stitcher.frameCount, 1)
+        XCTAssertEqual(stitcher.pixelHeight, 64)
+    }
+
+    func testLongScreenshotMatchesContentAroundFixedHeaderAndFooter() throws {
+        let first = try makeScrollingImageWithFixedChrome(
+            width: 120,
+            height: 100,
+            contentOffset: 0,
+            headerHeight: 18,
+            footerHeight: 16
+        )
+        let second = try makeScrollingImageWithFixedChrome(
+            width: 120,
+            height: 100,
+            contentOffset: 24,
+            headerHeight: 18,
+            footerHeight: 16
+        )
+        let stitcher = try LongScreenshotStitcher(firstFrame: first)
+
+        let result = try stitcher.append(second)
+
+        guard case let .appended(match) = result else {
+            return XCTFail("Expected fixed-chrome frame to append, got \(result)")
+        }
+        XCTAssertEqual(match.verticalOffset, 24)
+        XCTAssertEqual(match.overlapHeight, 76)
+        XCTAssertEqual(stitcher.frameCount, 2)
+        XCTAssertEqual(stitcher.pixelHeight, 124)
+    }
+
+    func testLongScreenshotRejectsLowConfidenceFrameWithoutLosingAcceptedContent() throws {
+        let first = try makeScrollingImage(width: 88, height: 72, contentOffset: 0, seed: 3)
+        let unrelated = try makeScrollingImage(width: 88, height: 72, contentOffset: 0, seed: 197)
+        let stitcher = try LongScreenshotStitcher(firstFrame: first)
+
+        let result = try stitcher.append(unrelated)
+        let finalImage = try stitcher.makeImage()
+
+        XCTAssertEqual(result, .noOverlap)
+        XCTAssertEqual(stitcher.frameCount, 1)
+        XCTAssertEqual(stitcher.pixelHeight, 72)
+        XCTAssertEqual(try normalizedRGBA(finalImage), try normalizedRGBA(first))
+    }
+
+    func testLongScreenshotEnforcesPixelHeightAndRawMemoryLimitsBeforeAppend() throws {
+        let first = try makeScrollingImage(width: 64, height: 70, contentOffset: 0)
+        let heightLimited = try LongScreenshotStitcher(
+            firstFrame: first,
+            limits: LongScreenshotLimits(maxPixelHeight: 90, maxRawBytes: 384 * 1_024 * 1_024)
+        )
+
+        XCTAssertThrowsError(try heightLimited.append(
+            makeScrollingImage(width: 64, height: 70, contentOffset: 24)
+        )) { error in
+            XCTAssertEqual(
+                error as? LongScreenshotStitcher.StitchingError,
+                .pixelHeightLimitExceeded(limit: 90, attempted: 94)
+            )
+        }
+        XCTAssertEqual(heightLimited.pixelHeight, 70)
+
+        XCTAssertThrowsError(try LongScreenshotStitcher(
+            firstFrame: makeScrollingImage(width: 64, height: 80, contentOffset: 0),
+            limits: LongScreenshotLimits(maxPixelHeight: 40_000, maxRawBytes: 64 * 80 * 4 - 1)
+        )) { error in
+            XCTAssertEqual(
+                error as? LongScreenshotStitcher.StitchingError,
+                .rawMemoryLimitExceeded(limit: 20_479, attempted: 20_480)
+            )
+        }
+    }
+
+    func testToolbarTooltipPlacementStaysVisibleAroundScreenEdges() {
+        let bounds = CGRect(x: 0, y: 0, width: 320, height: 240)
+        let tooltipSize = CGSize(width: 180, height: 28)
+        let anchors = [
+            CGRect(x: 4, y: 4, width: 32, height: 32),
+            CGRect(x: 284, y: 4, width: 32, height: 32),
+            CGRect(x: 4, y: 204, width: 32, height: 32),
+            CGRect(x: 284, y: 204, width: 32, height: 32)
+        ]
+
+        for anchor in anchors {
+            let frame = ScreenshotToolbarGeometry.tooltipFrame(
+                anchor: anchor,
+                size: tooltipSize,
+                in: bounds
+            )
+            XCTAssertGreaterThanOrEqual(frame.minX, bounds.minX + 8)
+            XCTAssertGreaterThanOrEqual(frame.minY, bounds.minY + 8)
+            XCTAssertLessThanOrEqual(frame.maxX, bounds.maxX - 8)
+            XCTAssertLessThanOrEqual(frame.maxY, bounds.maxY - 8)
+        }
+    }
+
     private func makeSolidImage(width: Int, height: Int) throws -> CGImage {
         try makeImage(width: width, height: height) { context in
             context.setFillColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1)
@@ -249,6 +400,114 @@ final class ScreenshotTests: XCTestCase {
                 }
             }
         }
+    }
+
+    private func makeScrollingImage(
+        width: Int,
+        height: Int,
+        contentOffset: Int,
+        seed: Int = 0
+    ) throws -> CGImage {
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        for y in 0..<height {
+            let contentY = y + contentOffset
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                let mixed = UInt32(truncatingIfNeeded:
+                    (contentY &* 1_103_515_245) ^ (x &* 12_345) ^ (seed &* 2_654_435_761)
+                )
+                rgba[index] = UInt8(truncatingIfNeeded: mixed >> 16)
+                rgba[index + 1] = UInt8(truncatingIfNeeded: mixed >> 8)
+                rgba[index + 2] = UInt8(truncatingIfNeeded: mixed)
+                rgba[index + 3] = 255
+            }
+        }
+        return try makeRGBAImage(width: width, height: height, rgba: rgba)
+    }
+
+    private func makeScrollingImageWithFixedChrome(
+        width: Int,
+        height: Int,
+        contentOffset: Int,
+        headerHeight: Int,
+        footerHeight: Int
+    ) throws -> CGImage {
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                if y < headerHeight {
+                    rgba[index] = 28
+                    rgba[index + 1] = 72
+                    rgba[index + 2] = 128
+                } else if y >= height - footerHeight {
+                    rgba[index] = 52
+                    rgba[index + 1] = 52
+                    rgba[index + 2] = 52
+                } else {
+                    let contentY = y - headerHeight + contentOffset
+                    let mixed = UInt32(truncatingIfNeeded:
+                        (contentY &* 1_103_515_245) ^ (x &* 12_345) ^ 0x5A5A_5A5A
+                    )
+                    rgba[index] = UInt8(truncatingIfNeeded: mixed >> 16)
+                    rgba[index + 1] = UInt8(truncatingIfNeeded: mixed >> 8)
+                    rgba[index + 2] = UInt8(truncatingIfNeeded: mixed)
+                }
+                rgba[index + 3] = 255
+            }
+        }
+        return try makeRGBAImage(width: width, height: height, rgba: rgba)
+    }
+
+    private func makeRGBAImage(width: Int, height: Int, rgba: [UInt8]) throws -> CGImage {
+        let data = Data(rgba) as CFData
+        guard let provider = CGDataProvider(data: data),
+              let image = CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+              ) else {
+            throw TestError.imageCreationFailed
+        }
+        return image
+    }
+
+    private func normalizedRGBA(_ image: CGImage) throws -> Data {
+        let width = image.width
+        let height = image.height
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let rendered = rgba.withUnsafeMutableBytes { bytes -> Bool in
+            guard let baseAddress = bytes.baseAddress,
+                  let context = CGContext(
+                    data: baseAddress,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else {
+                return false
+            }
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard rendered else {
+            throw TestError.imageDataUnavailable
+        }
+        return Data(rgba)
     }
 
     private func makeImage(

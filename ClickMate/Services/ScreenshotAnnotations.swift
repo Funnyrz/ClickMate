@@ -55,11 +55,12 @@ enum ScreenshotAnnotation: Equatable {
 
 @MainActor
 final class ScreenshotSessionModel {
-    let originalImage: CGImage
+    private(set) var originalImage: CGImage
     let screenSize: CGSize
 
     private(set) var selection: CGRect?
     private(set) var isEditing = false
+    private(set) var isLongScreenshot = false
     private(set) var annotations: [ScreenshotAnnotation] = []
     var selectedTool: ScreenshotTool = .rectangle
     var style: ScreenshotAnnotationStyle = .default
@@ -92,6 +93,15 @@ final class ScreenshotSessionModel {
         isEditing = true
     }
 
+    func replaceWithLongScreenshot(_ image: CGImage) {
+        originalImage = image
+        isLongScreenshot = true
+        isEditing = false
+        annotations = []
+        undoStack = []
+        redoStack = []
+    }
+
     func addAnnotation(_ annotation: ScreenshotAnnotation) {
         commit(annotations + [annotation])
     }
@@ -114,6 +124,14 @@ final class ScreenshotSessionModel {
     }
 
     func renderedImage() throws -> CGImage {
+        if isLongScreenshot {
+            return try ScreenshotAnnotationRenderer.render(
+                image: originalImage,
+                screenSize: CGSize(width: originalImage.width, height: originalImage.height),
+                selection: CGRect(x: 0, y: 0, width: originalImage.width, height: originalImage.height),
+                annotations: annotations
+            )
+        }
         guard let selection else {
             throw ScreenshotError.invalidSelection
         }

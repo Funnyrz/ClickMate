@@ -159,8 +159,7 @@ enum PendingCommandQueue {
     static let notificationName = "\(AppConstants.bundleIdentifier).pendingCommandsChanged"
 
     private static var queueDirectoryURL: URL {
-        let containerURL = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroupIdentifier)
+        let containerURL = ApplicationGroupAccessPolicy.sharedContainerURL()
         let baseURL = containerURL ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first!

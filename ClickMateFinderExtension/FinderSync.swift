@@ -2,26 +2,102 @@ import Cocoa
 import FinderSync
 import OSLog
 
+private final class FinderExtensionRuntimeReporter: @unchecked Sendable {
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderSync")
+    private let queue = DispatchQueue(
+        label: "com.zxacn.clickmate.finder-extension-runtime",
+        qos: .utility
+    )
+    private let isAvailable = FinderExtensionRuntimeSnapshotStore.isAvailable
+    private var lastAccessResult: FinderExtensionAccessResult?
+    private var lastAccessAt: Date?
+
+    func start() {
+        guard isAvailable else {
+            logger.notice("Finder extension runtime reporting disabled because the shared App Group container is unavailable")
+            return
+        }
+        queue.async { [weak self] in
+            self?.publishSnapshot()
+        }
+    }
+
+    func recordConfigurationUpdate() {
+        guard isAvailable else { return }
+        queue.async { [weak self] in
+            self?.publishSnapshot()
+        }
+    }
+
+    func recordUserInitiatedAccess(_ result: FinderExtensionAccessResult) {
+        guard isAvailable else { return }
+        queue.async { [weak self] in
+            guard let self else { return }
+            lastAccessResult = result
+            lastAccessAt = .now
+            publishSnapshot()
+        }
+    }
+
+    private func publishSnapshot() {
+        let snapshot = FinderExtensionRuntimeSnapshot(
+            pid: ProcessInfo.processInfo.processIdentifier,
+            version: runtimeVersionIdentifier,
+            diskAccessStatus: .unknown,
+            monitoringPolicyVersion: FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion,
+            lastAccessResult: lastAccessResult,
+            lastAccessAt: lastAccessAt
+        )
+
+        if FinderExtensionRuntimeSnapshotStore.write(snapshot) {
+            logger.info(
+                "Published Finder extension runtime snapshot pid=\(snapshot.pid, privacy: .public) policy=\(FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion, privacy: .public)"
+            )
+        } else {
+            logger.error("Failed to publish Finder extension runtime snapshot")
+        }
+    }
+
+    private var runtimeVersionIdentifier: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+
+        switch (shortVersion, buildVersion) {
+        case let (shortVersion?, buildVersion?):
+            return "\(shortVersion) (\(buildVersion))"
+        case let (shortVersion?, nil):
+            return shortVersion
+        case let (nil, buildVersion?):
+            return buildVersion
+        case (nil, nil):
+            return "0"
+        }
+    }
+}
+
 class FinderSync: FIFinderSync {
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderSync")
     private let menuIconSize = NSSize(width: 16, height: 16)
-    private lazy var store = PreferencesStore()
+    private lazy var store = PreferencesStore(allowsWrites: false)
     private var latestMenuContext: FinderContext?
     private var menuActionTokens: [Int: FinderCommandToken] = [:]
     private var menuActionTitleTokens: [String: FinderCommandToken] = [:]
     private var menuImageCache: [String: NSImage] = [:]
     private var pendingApplicationIconCacheKeys: Set<String> = []
     private var nextMenuActionTag = 1
+    private let runtimeReporter = FinderExtensionRuntimeReporter()
+    private let sharedContainerAvailable = ApplicationGroupAccessPolicy.sharedContainerURL() != nil
 
     override init() {
         super.init()
         L10n.languageProvider = { [weak self] in
             self?.store.preferences.language ?? .system
         }
-        setBootstrapMonitoredDirectories()
+        applyPinnedApplicationFallback()
         refreshMonitoredDirectoriesFromPreferences()
         preloadApplicationIcons()
         observePreferenceChanges()
+        runtimeReporter.start()
     }
 
     deinit {
@@ -29,6 +105,12 @@ class FinderSync: FIFinderSync {
             CFNotificationCenterGetDarwinNotifyCenter(),
             Unmanaged.passUnretained(self).toOpaque(),
             CFNotificationName(PreferencesChangeNotifier.name as CFString),
+            nil
+        )
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(PinnedApplicationSyncStore.notificationName as CFString),
             nil
         )
     }
@@ -62,6 +144,7 @@ class FinderSync: FIFinderSync {
             logger.debug("Built Finder menu in \(elapsed, privacy: .public) ms")
         }
 
+        applyPinnedApplicationFallback()
         let selectedURLs = FIFinderSyncController.default().selectedItemURLs() ?? []
         let targetedURL = FIFinderSyncController.default().targetedURL()
         let context = FinderContext(selectedURLs: selectedURLs, targetedURL: targetedURL)
@@ -78,12 +161,21 @@ class FinderSync: FIFinderSync {
 
     private func updateMonitoredDirectories() {
         store.reload()
+        applyPinnedApplicationFallback()
         refreshMonitoredDirectoriesFromPreferences()
+        preloadApplicationIcons()
+        runtimeReporter.recordConfigurationUpdate()
     }
 
-    private func setBootstrapMonitoredDirectories() {
-        let urls = Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap())
-        applyMonitoredDirectoryURLs(urls)
+    private func applyPinnedApplicationFallback() {
+        guard !sharedContainerAvailable,
+              let pinnedApplicationPaths = PinnedApplicationSyncStore.synchronizedPaths()
+        else {
+            return
+        }
+        var preferences = store.preferences
+        preferences.pinnedApplicationPaths = pinnedApplicationPaths
+        store.replaceLoadedPreferences(preferences)
     }
 
     private func refreshMonitoredDirectoriesFromPreferences() {
@@ -92,35 +184,39 @@ class FinderSync: FIFinderSync {
 
     private func applyMonitoredDirectoryURLs(_ urls: Set<URL>) {
         FIFinderSyncController.default().directoryURLs = Set(urls)
-        let preview = urls.map(\.path).sorted().prefix(8).joined(separator: ", ")
-        logger.info("Monitoring \(urls.count, privacy: .public) directories: \(preview, privacy: .public)")
+        logger.info(
+            "Monitoring \(urls.count, privacy: .public) safe roots with policy \(FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion, privacy: .public)"
+        )
     }
 
     private func monitoredDirectoryURLs() -> Set<URL> {
-        var urls = MonitoredFolderPolicy.finderSyncDirectoryURLs(for: store.preferences)
-        urls.formUnion(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap())
-        return urls
+        MonitoredFolderPolicy.finderSyncDirectoryURLs(for: store.preferences)
     }
 
     private func observePreferenceChanges() {
         let observer = Unmanaged.passUnretained(self).toOpaque()
-        CFNotificationCenterAddObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            observer,
-            { _, observer, _, _, _ in
-                guard let observer else { return }
-                let observerAddress = Int(bitPattern: observer)
-                DispatchQueue.main.async {
-                    let finderSync = Unmanaged<FinderSync>
-                        .fromOpaque(UnsafeRawPointer(bitPattern: observerAddress)!)
-                        .takeUnretainedValue()
-                    finderSync.updateMonitoredDirectories()
-                }
-            },
-            PreferencesChangeNotifier.name as CFString,
-            nil,
-            .deliverImmediately
-        )
+        for notificationName in [
+            PreferencesChangeNotifier.name,
+            PinnedApplicationSyncStore.notificationName
+        ] {
+            CFNotificationCenterAddObserver(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                observer,
+                { _, observer, _, _, _ in
+                    guard let observer else { return }
+                    let observerAddress = Int(bitPattern: observer)
+                    DispatchQueue.main.async {
+                        let finderSync = Unmanaged<FinderSync>
+                            .fromOpaque(UnsafeRawPointer(bitPattern: observerAddress)!)
+                            .takeUnretainedValue()
+                        finderSync.updateMonitoredDirectories()
+                    }
+                },
+                notificationName as CFString,
+                nil,
+                .deliverImmediately
+            )
+        }
     }
 
     private func appendNewFileMenu(to menu: NSMenu, context: FinderContext) {
@@ -505,7 +601,7 @@ class FinderSync: FIFinderSync {
 
         let context = latestMenuContext ?? currentContext()
         logger.info(
-            "Handling menu action \(token.rawValue, privacy: .public), selected=\(context.selectedURLs.count, privacy: .public), targeted=\(context.targetedURL?.path ?? "nil", privacy: .public)"
+            "Handling menu action \(token.rawValue, privacy: .public), selected=\(context.selectedURLs.count, privacy: .public), hasTarget=\(context.targetedURL != nil, privacy: .public)"
         )
 
         switch token {
@@ -616,27 +712,36 @@ class FinderSync: FIFinderSync {
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
             do {
                 try FileActions.duplicateWithTimestamp(urls: context.actionURLs)
+                recordUserInitiatedAccess(.success)
                 notifySuccess("notification.completed")
             } catch {
-                logger.error("Duplicate failed: \(error.localizedDescription, privacy: .public)")
+                let result = accessResult(for: error)
+                recordUserInitiatedAccess(result)
+                logFileActionFailure("duplicate", result: result, error: error)
                 notifyFailure("notification.actionFailed")
             }
         case .createAlias:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
             do {
                 try FileActions.createAliases(urls: context.actionURLs)
+                recordUserInitiatedAccess(.success)
                 notifySuccess("notification.completed")
             } catch {
-                logger.error("Create alias failed: \(error.localizedDescription, privacy: .public)")
+                let result = accessResult(for: error)
+                recordUserInitiatedAccess(result)
+                logFileActionFailure("createAlias", result: result, error: error)
                 notifyFailure("notification.actionFailed")
             }
         case .moveToNewFolder:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
             do {
                 try FileActions.moveToNewFolder(urls: context.actionURLs)
+                recordUserInitiatedAccess(.success)
                 notifySuccess("notification.completed")
             } catch {
-                logger.error("Move to new folder failed: \(error.localizedDescription, privacy: .public)")
+                let result = accessResult(for: error)
+                recordUserInitiatedAccess(result)
+                logFileActionFailure("moveToNewFolder", result: result, error: error)
                 notifyFailure("notification.actionFailed")
             }
         case .compress:
@@ -663,6 +768,54 @@ class FinderSync: FIFinderSync {
         case .newFile:
             break
         }
+    }
+
+    private func recordUserInitiatedAccess(_ result: FinderExtensionAccessResult) {
+        runtimeReporter.recordUserInitiatedAccess(result)
+    }
+
+    private func accessResult(for error: Error) -> FinderExtensionAccessResult {
+        isPermissionDenied(error as NSError) ? .permissionDenied : .failed
+    }
+
+    private func isPermissionDenied(_ error: NSError) -> Bool {
+        if error.domain == NSPOSIXErrorDomain {
+            let permissionCodes = [
+                Int(POSIXErrorCode.EACCES.rawValue),
+                Int(POSIXErrorCode.EPERM.rawValue)
+            ]
+            if permissionCodes.contains(error.code) {
+                return true
+            }
+        }
+
+        if error.domain == NSCocoaErrorDomain {
+            let permissionCodes = [
+                CocoaError.Code.fileReadNoPermission.rawValue,
+                CocoaError.Code.fileWriteNoPermission.rawValue
+            ]
+            if permissionCodes.contains(error.code) {
+                return true
+            }
+        }
+
+        guard let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? NSError,
+              underlyingError !== error
+        else {
+            return false
+        }
+        return isPermissionDenied(underlyingError)
+    }
+
+    private func logFileActionFailure(
+        _ action: String,
+        result: FinderExtensionAccessResult,
+        error: Error
+    ) {
+        let nsError = error as NSError
+        logger.error(
+            "File action \(action, privacy: .public) failed: result=\(result.rawValue, privacy: .public), domain=\(nsError.domain, privacy: .public), code=\(nsError.code, privacy: .public)"
+        )
     }
 
     private func copyHash(algorithm: HashAlgorithm, context: FinderContext) {
@@ -694,6 +847,15 @@ class FinderSync: FIFinderSync {
             notifyFailure("notification.noSelection")
             return
         }
+        guard sharedContainerAvailable else {
+            if !AppLauncher.requestContainingAppToOpenApplication(
+                command: command,
+                urls: context.actionURLs
+            ) {
+                notifyFailure("notification.openFailed")
+            }
+            return
+        }
         PendingCommandQueue.enqueue(.openApplication(command: command, urls: context.actionURLs))
         let opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
         if !opened {
@@ -704,6 +866,15 @@ class FinderSync: FIFinderSync {
     private func openPinnedApplication(path: String, context: FinderContext) {
         guard !context.actionURLs.isEmpty else {
             notifyFailure("notification.noSelection")
+            return
+        }
+        guard sharedContainerAvailable else {
+            if !AppLauncher.requestContainingAppToOpenPinnedApplication(
+                path: path,
+                urls: context.actionURLs
+            ) {
+                notifyFailure("notification.openFailed")
+            }
             return
         }
         PendingCommandQueue.enqueue(.openPinnedApplication(path: path, urls: context.actionURLs))

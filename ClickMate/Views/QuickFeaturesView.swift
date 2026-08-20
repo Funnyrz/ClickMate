@@ -3,9 +3,8 @@ import SwiftUI
 
 struct QuickFeaturesView: View {
     @EnvironmentObject private var store: PreferencesStore
-    @ObservedObject private var permissionMonitor = QuickFeaturePermissionMonitor.shared
+    @ObservedObject private var helperService = QuickFeatureHelperService.shared
     @State private var validationMessages: [QuickFeatureID: String] = [:]
-    @State private var registrationFailures: Set<QuickFeatureID> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -16,6 +15,15 @@ struct QuickFeaturesView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if !helperService.isRuntimeRunning {
+                Label(
+                    L10n.string("quickFeatures.backgroundServiceWarning"),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.footnote)
+                .foregroundStyle(.orange)
+            }
+
             ScrollView {
                 VStack(spacing: 12) {
                     featureCard(for: .finderCut)
@@ -24,12 +32,6 @@ struct QuickFeaturesView: View {
                 .padding(.vertical, 2)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .quickFeatureRuntimeStatusChanged)) { notification in
-            registrationFailures = Set(notification.userInfo?["failedIDs"] as? [QuickFeatureID] ?? [])
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshPermissions()
-        }
         .onAppear {
             refreshPermissions()
         }
@@ -37,7 +39,8 @@ struct QuickFeaturesView: View {
 
     private func featureCard(for id: QuickFeatureID) -> some View {
         let setting = settings(for: id)
-        let permissionGranted = permissionIsGranted(for: id)
+        let permissionState = permissionState(for: id)
+        let permissionGranted = permissionState == .granted
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: id.systemImage)
@@ -74,13 +77,11 @@ struct QuickFeaturesView: View {
                 }
                 Spacer()
                 Label(
-                    permissionGranted
-                        ? L10n.string("quickFeatures.permissionGranted")
-                        : L10n.string("quickFeatures.permissionMissing"),
-                    systemImage: permissionGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                    permissionTitle(for: permissionState),
+                    systemImage: permissionIcon(for: permissionState)
                 )
                 .font(.caption)
-                .foregroundStyle(permissionGranted ? .green : .orange)
+                .foregroundStyle(permissionColor(for: permissionState))
             }
 
             if !permissionGranted {
@@ -88,13 +89,15 @@ struct QuickFeaturesView: View {
                     Button(L10n.string("quickFeatures.requestPermission")) {
                         requestPermission(for: id)
                     }
+                    .disabled(permissionRequestIsActive(permissionState))
                     Button(L10n.string("quickFeatures.openSettings")) {
                         openPermissionSettings(for: id)
                     }
                     if id == .screenshot {
-                        Button(L10n.string("permissions.restartApplication")) {
-                            QuickFeaturePermissions.relaunchApplication()
+                        Button(L10n.string("permissions.restartBackgroundService")) {
+                            helperService.restart()
                         }
+                        .disabled(permissionRequestIsActive(permissionState))
                     }
                     Spacer()
                 }
@@ -104,7 +107,13 @@ struct QuickFeaturesView: View {
                 Label(message, systemImage: "exclamationmark.circle")
                     .font(.caption)
                     .foregroundStyle(.red)
-            } else if registrationFailures.contains(id) {
+            } else if let message = helperService.permissionFailureMessage(
+                for: id == .finderCut ? .accessibility : .screenRecording
+            ) {
+                Label(message, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if helperService.failedFeatureIDs.contains(id) {
                 Label(L10n.string("quickFeatures.registrationFailed"), systemImage: "exclamationmark.circle")
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -125,6 +134,11 @@ struct QuickFeaturesView: View {
             updateSettings(for: id) { settings in
                 settings.isEnabled = isEnabled
             }
+            if isEnabled {
+                store.preferences.backgroundServiceEnabled = true
+            }
+            store.waitForPendingSaves()
+            helperService.synchronize(preferences: store.preferences)
             validationMessages[id] = nil
             if isEnabled && !permissionIsGranted(for: id) {
                 requestPermission(for: id)
@@ -149,7 +163,7 @@ struct QuickFeaturesView: View {
             settings.shortcut = shortcut
         }
         validationMessages[id] = nil
-        registrationFailures.remove(id)
+        helperService.refreshRuntimeStatus()
     }
 
     private func updateSettings(for id: QuickFeatureID, update: (inout QuickFeatureSettings) -> Void) {
@@ -166,35 +180,85 @@ struct QuickFeaturesView: View {
     }
 
     private func permissionIsGranted(for id: QuickFeatureID) -> Bool {
-        switch id {
-        case .finderCut:
-            return permissionMonitor.snapshot.accessibilityGranted
-        case .screenshot:
-            return permissionMonitor.snapshot.screenRecordingGranted
-        }
+        permissionState(for: id) == .granted
+    }
+
+    private func permissionState(for id: QuickFeatureID) -> QuickFeaturePermissionState {
+        helperService.permissionState(for: id == .finderCut ? .accessibility : .screenRecording)
     }
 
     private func requestPermission(for id: QuickFeatureID) {
         switch id {
         case .finderCut:
-            QuickFeaturePermissions.requestAccessibilityAccess()
+            helperService.requestAccessibilityAccess()
         case .screenshot:
-            QuickFeaturePermissions.requestScreenRecordingAccess()
+            helperService.requestScreenRecordingAccess()
         }
-        refreshPermissions()
+    }
+
+    private func permissionTitle(for state: QuickFeaturePermissionState) -> String {
+        switch state {
+        case .unknown:
+            return L10n.string("quickFeatures.permissionUnknown")
+        case .notGranted:
+            return L10n.string("quickFeatures.permissionMissing")
+        case .granted:
+            return L10n.string("quickFeatures.permissionGranted")
+        case .checking, .waitingForUser, .restartRequired:
+            return L10n.string("quickFeatures.permissionRefreshing")
+        case .failed:
+            return L10n.string("quickFeatures.permissionFailed")
+        }
+    }
+
+    private func permissionIcon(for state: QuickFeaturePermissionState) -> String {
+        switch state {
+        case .unknown:
+            return "questionmark.circle.fill"
+        case .notGranted:
+            return "exclamationmark.triangle.fill"
+        case .granted:
+            return "checkmark.circle.fill"
+        case .checking, .waitingForUser, .restartRequired:
+            return "arrow.triangle.2.circlepath.circle.fill"
+        case .failed:
+            return "xmark.circle.fill"
+        }
+    }
+
+    private func permissionColor(for state: QuickFeaturePermissionState) -> Color {
+        switch state {
+        case .unknown:
+            return .secondary
+        case .notGranted, .checking, .waitingForUser, .restartRequired:
+            return .orange
+        case .granted:
+            return .green
+        case .failed:
+            return .red
+        }
+    }
+
+    private func permissionRequestIsActive(_ state: QuickFeaturePermissionState) -> Bool {
+        switch state {
+        case .checking, .waitingForUser, .restartRequired:
+            return true
+        case .unknown, .notGranted, .granted, .failed:
+            return false
+        }
     }
 
     private func openPermissionSettings(for id: QuickFeatureID) {
         switch id {
         case .finderCut:
-            QuickFeaturePermissions.openAccessibilitySettings()
+            helperService.openPermissionSettings(.accessibility)
         case .screenshot:
-            QuickFeaturePermissions.openScreenRecordingSettings()
+            helperService.openPermissionSettings(.screenRecording)
         }
     }
 
     private func refreshPermissions() {
-        permissionMonitor.refresh()
+        helperService.refreshAllStatuses()
     }
 }
 
@@ -264,13 +328,13 @@ private struct ShortcutRecorder: NSViewRepresentable {
         }
 
         @objc func beginRecording(_ sender: ShortcutRecorderButton) {
+            let sessionID = UUID()
+            guard QuickFeatureHelperService.shared.beginShortcutRecording(sessionID: sessionID) else {
+                return
+            }
+            sender.recordingSessionID = sessionID
             sender.isRecording = true
             sender.title = L10n.string("quickFeatures.recording")
-            NotificationCenter.default.post(
-                name: .quickFeatureShortcutRecordingChanged,
-                object: nil,
-                userInfo: ["isRecording": true]
-            )
             sender.window?.makeFirstResponder(sender)
         }
     }
@@ -280,6 +344,7 @@ private final class ShortcutRecorderButton: NSButton {
     var onShortcut: ((KeyboardShortcut) -> Void)?
     var normalTitle = ""
     var isRecording = false
+    var recordingSessionID: UUID?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -315,15 +380,9 @@ private final class ShortcutRecorderButton: NSButton {
         guard isRecording else { return }
         isRecording = false
         title = normalTitle
-        NotificationCenter.default.post(
-            name: .quickFeatureShortcutRecordingChanged,
-            object: nil,
-            userInfo: ["isRecording": false]
-        )
+        if let recordingSessionID {
+            QuickFeatureHelperService.shared.endShortcutRecording(sessionID: recordingSessionID)
+            self.recordingSessionID = nil
+        }
     }
-}
-
-extension Notification.Name {
-    static let quickFeatureRuntimeStatusChanged = Notification.Name("ClickMate.quickFeatureRuntimeStatusChanged")
-    static let quickFeatureShortcutRecordingChanged = Notification.Name("ClickMate.quickFeatureShortcutRecordingChanged")
 }

@@ -3,14 +3,25 @@ import Carbon.HIToolbox
 
 @MainActor
 final class QuickFeatureCoordinator {
-    private let store = PreferencesStore()
     private let hotKeyRegistrar = GlobalHotKeyRegistrar()
     private let finderCutController = FinderCutController()
     private var activationObserver: NSObjectProtocol?
-    private var recordingObserver: NSObjectProtocol?
     private var permissionObserver: NSObjectProtocol?
+    private var reloadTask: Task<Void, Never>?
     private var isStarted = false
     private var isRecordingShortcut = false
+    private let configurationURL: URL
+    private let configurationNotificationName: String
+    private(set) var failedFeatureIDs: Set<QuickFeatureID> = []
+    private(set) var enabledFeatureIDs: Set<QuickFeatureID> = []
+
+    init(
+        configurationURL: URL = QuickFeatureHelperConfigurationStore.fileURL,
+        configurationNotificationName: String = QuickFeatureHelperConfigurationStore.notificationName
+    ) {
+        self.configurationURL = configurationURL
+        self.configurationNotificationName = configurationNotificationName
+    }
 
     func start() {
         guard !isStarted else { return }
@@ -27,7 +38,6 @@ final class QuickFeatureCoordinator {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                QuickFeaturePermissionMonitor.shared.refresh()
                 self?.reloadConfiguration()
             }
         }
@@ -40,26 +50,8 @@ final class QuickFeatureCoordinator {
                 self?.reloadConfiguration()
             }
         }
-        recordingObserver = NotificationCenter.default.addObserver(
-            forName: .quickFeatureShortcutRecordingChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            let isRecording = notification.userInfo?["isRecording"] as? Bool
-            MainActor.assumeIsolated {
-                guard let self,
-                      let isRecording
-                else { return }
-                self.isRecordingShortcut = isRecording
-                if isRecording {
-                    self.hotKeyRegistrar.unregisterAll()
-                } else {
-                    self.reloadConfiguration()
-                }
-            }
-        }
         observePreferenceChanges()
-        QuickFeaturePermissionMonitor.shared.refresh()
+        QuickFeaturePermissionMonitor.shared.refreshOnce()
         reloadConfiguration()
     }
 
@@ -68,16 +60,12 @@ final class QuickFeatureCoordinator {
         CFNotificationCenterRemoveObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             Unmanaged.passUnretained(self).toOpaque(),
-            CFNotificationName(PreferencesChangeNotifier.name as CFString),
+            CFNotificationName(configurationNotificationName as CFString),
             nil
         )
         if let activationObserver {
             NotificationCenter.default.removeObserver(activationObserver)
             self.activationObserver = nil
-        }
-        if let recordingObserver {
-            NotificationCenter.default.removeObserver(recordingObserver)
-            self.recordingObserver = nil
         }
         if let permissionObserver {
             NotificationCenter.default.removeObserver(permissionObserver)
@@ -86,7 +74,28 @@ final class QuickFeatureCoordinator {
         hotKeyRegistrar.invalidate()
         finderCutController.stop()
         ScreenshotCoordinator.shared.cancel()
+        reloadTask?.cancel()
+        reloadTask = nil
         isStarted = false
+    }
+
+    func setShortcutRecording(_ isRecording: Bool) {
+        guard isRecordingShortcut != isRecording else { return }
+        isRecordingShortcut = isRecording
+        if isRecording {
+            hotKeyRegistrar.unregisterAll()
+            finderCutController.stop()
+            failedFeatureIDs = []
+        } else {
+            reloadConfiguration()
+        }
+    }
+
+    @discardableResult
+    func refreshPermissionsAndConfiguration() -> QuickFeaturePermissionSnapshot {
+        QuickFeaturePermissionMonitor.shared.refreshOnce()
+        reloadConfiguration()
+        return QuickFeaturePermissionMonitor.shared.snapshot
     }
 
     private func observePreferenceChanges() {
@@ -103,25 +112,41 @@ final class QuickFeatureCoordinator {
                     coordinator.reloadConfiguration()
                 }
             },
-            PreferencesChangeNotifier.name as CFString,
+            configurationNotificationName as CFString,
             nil,
             .deliverImmediately
         )
     }
 
-    private func reloadConfiguration() {
-        store.reload()
+    func reloadConfiguration() {
+        reloadTask?.cancel()
+        let fileURL = configurationURL
+        reloadTask = Task { [weak self] in
+            let data = await Task.detached(priority: .userInitiated) {
+                try? Data(contentsOf: fileURL)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            let configuration = data.flatMap {
+                try? JSONDecoder().decode(QuickFeatureHelperConfiguration.self, from: $0)
+            } ?? .defaults
+            applyConfiguration(configuration.quickFeatureSettings)
+        }
+    }
+
+    private func applyConfiguration(_ quickFeatureSettings: [QuickFeatureSettings]) {
         hotKeyRegistrar.unregisterAll()
         finderCutController.stop()
 
-        let settings = QuickFeatureSettings.normalized(store.preferences.quickFeatureSettings)
+        let settings = QuickFeatureSettings.normalized(quickFeatureSettings)
+        enabledFeatureIDs = Set(settings.filter(\.isEnabled).map(\.id))
         let conflicts = QuickFeatureSettings.conflictingFeatureIDs(in: settings)
         var failedIDs = conflicts
 
-        if let finderCut = settings.first(where: { $0.id == .finderCut }),
+        if !isRecordingShortcut,
+           let finderCut = settings.first(where: { $0.id == .finderCut }),
            finderCut.isEnabled,
            !conflicts.contains(.finderCut),
-           QuickFeaturePermissions.hasAccessibilityAccess,
+           QuickFeaturePermissionMonitor.shared.snapshot.accessibilityGranted,
            !finderCutController.start(shortcut: finderCut.shortcut) {
             failedIDs.insert(.finderCut)
         }
@@ -134,6 +159,7 @@ final class QuickFeatureCoordinator {
             failedIDs.insert(.screenshot)
         }
 
+        failedFeatureIDs = failedIDs
         NotificationCenter.default.post(
             name: .quickFeatureRuntimeStatusChanged,
             object: nil,
@@ -151,6 +177,10 @@ final class QuickFeatureCoordinator {
     }
 
     private func captureScreenshot() {
+        if ScreenshotCoordinator.shared.state == .previewing {
+            ScreenshotCoordinator.shared.bringPreviewToFront()
+            return
+        }
         guard ScreenshotCoordinator.shared.state == .idle else {
             HUDPresenter.shared.show(message: L10n.string("quickFeatures.screenshotInProgress"))
             return
@@ -174,4 +204,10 @@ private extension KeyboardShortcut {
         if modifiers.contains(.shift) { result |= UInt32(shiftKey) }
         return result
     }
+}
+
+extension Notification.Name {
+    static let quickFeatureRuntimeStatusChanged = Notification.Name(
+        "ClickMate.quickFeatureRuntimeStatusChanged"
+    )
 }

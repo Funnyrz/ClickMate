@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: PreferencesStore
     @EnvironmentObject private var updateCoordinator: UpdateCheckCoordinator
+    @ObservedObject private var helperService = QuickFeatureHelperService.shared
     @State private var selectedTab: SettingsTab = .menus
 
     var body: some View {
@@ -37,8 +38,17 @@ struct ContentView: View {
             if !store.preferences.hasDismissedPermissionGuide {
                 selectedTab = .permissions
             }
+            refreshPermissionStatusesIfNeeded(for: selectedTab)
+        }
+        .onChange(of: selectedTab) { _, tab in
+            refreshPermissionStatusesIfNeeded(for: tab)
         }
         .alert(item: manualResultBinding, content: updateAlert)
+    }
+
+    private func refreshPermissionStatusesIfNeeded(for tab: SettingsTab) {
+        guard tab == .permissions || tab == .quickFeatures else { return }
+        helperService.refreshAllStatuses()
     }
 
     private var updateFooter: some View {

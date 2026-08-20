@@ -90,6 +90,48 @@
 		100000000000000000000052 /* Services/ScreenshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000030 /* Services/ScreenshotService.swift */; };
 		100000000000000000000053 /* Services/QuickFeaturePermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002C /* Services/QuickFeaturePermissions.swift */; };
 		100000000000000000000054 /* QuickFeaturePermissionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000036 /* QuickFeaturePermissionsTests.swift */; };
+		100000000000000000000055 /* Services/LongScreenshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000037 /* Services/LongScreenshot.swift */; };
+		100000000000000000000056 /* Services/LongScreenshotCaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000038 /* Services/LongScreenshotCaptureController.swift */; };
+		100000000000000000000057 /* Services/LongScreenshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000037 /* Services/LongScreenshot.swift */; };
+		100000000000000000000058 /* Services/LongScreenshotCaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000038 /* Services/LongScreenshotCaptureController.swift */; };
+		100000000000000000000059 /* Views/LongScreenshotPreviewWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000039 /* Views/LongScreenshotPreviewWindowController.swift */; };
+		10000000000000000000005A /* Views/LongScreenshotPreviewWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000039 /* Views/LongScreenshotPreviewWindowController.swift */; };
+		10000000000000000000005B /* Services/QuickFeatureHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003A /* Services/QuickFeatureHelperService.swift */; };
+		10000000000000000000005C /* QuickFeatureHelperIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003B /* QuickFeatureHelperIPC.swift */; };
+		10000000000000000000005D /* QuickFeatureHelperIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003B /* QuickFeatureHelperIPC.swift */; };
+		10000000000000000000005E /* QuickFeatureHelperIPCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003C /* QuickFeatureHelperIPCTests.swift */; };
+		10000000000000000000005F /* Services/QuickFeatureHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003A /* Services/QuickFeatureHelperService.swift */; };
+		A1B2C3D4E5F60708090A0001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F60708090A0001 /* AppDelegate.swift */; };
+		A1B2C3D4E5F60708090A0002 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* AppConstants.swift */; };
+		A1B2C3D4E5F60708090A0003 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* AppLanguage.swift */; };
+		A1B2C3D4E5F60708090A0004 /* FileTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* FileTemplate.swift */; };
+		A1B2C3D4E5F60708090A0005 /* MenuCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000A /* MenuCommand.swift */; };
+		A1B2C3D4E5F60708090A0006 /* ClickMatePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* ClickMatePreferences.swift */; };
+		A1B2C3D4E5F60708090A0007 /* QuickFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000032 /* QuickFeatures.swift */; };
+		A1B2C3D4E5F60708090A0008 /* PathFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000C /* PathFormatter.swift */; };
+		A1B2C3D4E5F60708090A0009 /* FileCreator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000D /* FileCreator.swift */; };
+		A1B2C3D4E5F60708090A000A /* FileHasher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000E /* FileHasher.swift */; };
+		A1B2C3D4E5F60708090A000B /* AppDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000F /* AppDetector.swift */; };
+		A1B2C3D4E5F60708090A000C /* FileActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* FileActions.swift */; };
+		A1B2C3D4E5F60708090A000D /* AppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* AppLauncher.swift */; };
+		A1B2C3D4E5F60708090A000E /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000018 /* Localization.swift */; };
+		A1B2C3D4E5F60708090A000F /* FinderCommandToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000019 /* FinderCommandToken.swift */; };
+		A1B2C3D4E5F60708090A0010 /* ActionNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000001A /* ActionNotifier.swift */; };
+		A1B2C3D4E5F60708090A0011 /* PendingCommandQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000025 /* PendingCommandQueue.swift */; };
+		A1B2C3D4E5F60708090A0012 /* Services/QuickFeaturePermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002C /* Services/QuickFeaturePermissions.swift */; };
+		A1B2C3D4E5F60708090A0013 /* Services/FinderCutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002D /* Services/FinderCutController.swift */; };
+		A1B2C3D4E5F60708090A0014 /* Services/GlobalHotKeyRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002E /* Services/GlobalHotKeyRegistrar.swift */; };
+		A1B2C3D4E5F60708090A0015 /* Services/QuickFeatureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002F /* Services/QuickFeatureCoordinator.swift */; };
+		A1B2C3D4E5F60708090A0016 /* Services/ScreenshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000030 /* Services/ScreenshotService.swift */; };
+		A1B2C3D4E5F60708090A0017 /* Services/ScreenshotAnnotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000035 /* Services/ScreenshotAnnotations.swift */; };
+		A1B2C3D4E5F60708090A0018 /* Services/LongScreenshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000037 /* Services/LongScreenshot.swift */; };
+		A1B2C3D4E5F60708090A0019 /* Services/LongScreenshotCaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000038 /* Services/LongScreenshotCaptureController.swift */; };
+		A1B2C3D4E5F60708090A001A /* Views/ScreenshotSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000002A /* Views/ScreenshotSelectionView.swift */; };
+		A1B2C3D4E5F60708090A001B /* Views/LongScreenshotPreviewWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000039 /* Views/LongScreenshotPreviewWindowController.swift */; };
+		A1B2C3D4E5F60708090A001C /* Support/HUDPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000031 /* Support/HUDPresenter.swift */; };
+		A1B2C3D4E5F60708090A001E /* QuickFeatureHelperIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003B /* QuickFeatureHelperIPC.swift */; };
+		A4B2C3D4E5F60708090A0001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A4B2C3D4E5F60708090A0004 /* InfoPlist.strings */; };
+		A1B2C3D4E5F60708090A001D /* ClickMateHelper.app in Embed Login Items */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F60708090A0004 /* ClickMateHelper.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -107,6 +149,13 @@
 			remoteGlobalIDString = 600000000000000000000002;
 			remoteInfo = ClickMateFinderExtension;
 		};
+		C2B2C3D4E5F60708090A0001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 500000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D1B2C3D4E5F60708090A0001;
+			remoteInfo = ClickMateHelper;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -119,6 +168,17 @@
 				10000000000000000000001E /* ClickMateFinderExtension.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A2B2C3D4E5F60708090A0001 /* Embed Login Items */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library/LoginItems";
+			dstSubfolderSpec = 1;
+			files = (
+				A1B2C3D4E5F60708090A001D /* ClickMateHelper.app in Embed Login Items */,
+			);
+			name = "Embed Login Items";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -177,9 +237,21 @@
 		200000000000000000000033 /* QuickFeaturesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeaturesTests.swift; sourceTree = "<group>"; };
 		200000000000000000000034 /* ScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTests.swift; sourceTree = "<group>"; };
 		200000000000000000000036 /* QuickFeaturePermissionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeaturePermissionsTests.swift; sourceTree = "<group>"; };
+		200000000000000000000037 /* Services/LongScreenshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LongScreenshot.swift; sourceTree = "<group>"; };
+		200000000000000000000038 /* Services/LongScreenshotCaptureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LongScreenshotCaptureController.swift; sourceTree = "<group>"; };
+		200000000000000000000039 /* Views/LongScreenshotPreviewWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LongScreenshotPreviewWindowController.swift; sourceTree = "<group>"; };
+		20000000000000000000003A /* Services/QuickFeatureHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/QuickFeatureHelperService.swift; sourceTree = "<group>"; };
+		20000000000000000000003B /* QuickFeatureHelperIPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeatureHelperIPC.swift; sourceTree = "<group>"; };
+		20000000000000000000003C /* QuickFeatureHelperIPCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeatureHelperIPCTests.swift; sourceTree = "<group>"; };
 		400000000000000000000001 /* ClickMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000002 /* ClickMateFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClickMateFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000003 /* ClickMateCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClickMateCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1B2C3D4E5F60708090A0001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		B1B2C3D4E5F60708090A0002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B1B2C3D4E5F60708090A0003 /* ClickMateHelper.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClickMateHelper.entitlements; sourceTree = "<group>"; };
+		B1B2C3D4E5F60708090A0004 /* ClickMateHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickMateHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A4B2C3D4E5F60708090A0002 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A4B2C3D4E5F60708090A0003 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -204,6 +276,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1B2C3D4E5F60708090A0001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -211,6 +290,7 @@
 			isa = PBXGroup;
 			children = (
 				300000000000000000000002 /* ClickMate */,
+				C1B2C3D4E5F60708090A0001 /* ClickMateHelper */,
 				300000000000000000000003 /* ClickMateFinderExtension */,
 				300000000000000000000004 /* Shared/ClickMateCore */,
 				300000000000000000000005 /* Tests/ClickMateCoreTests */,
@@ -230,11 +310,15 @@
 				200000000000000000000006 /* Views/PermissionsView.swift */,
 				200000000000000000000029 /* Views/QuickFeaturesView.swift */,
 				20000000000000000000002A /* Views/ScreenshotSelectionView.swift */,
+				200000000000000000000039 /* Views/LongScreenshotPreviewWindowController.swift */,
 				200000000000000000000035 /* Services/ScreenshotAnnotations.swift */,
+				200000000000000000000037 /* Services/LongScreenshot.swift */,
+				200000000000000000000038 /* Services/LongScreenshotCaptureController.swift */,
 				20000000000000000000002C /* Services/QuickFeaturePermissions.swift */,
 				20000000000000000000002D /* Services/FinderCutController.swift */,
 				20000000000000000000002E /* Services/GlobalHotKeyRegistrar.swift */,
 				20000000000000000000002F /* Services/QuickFeatureCoordinator.swift */,
+				20000000000000000000003A /* Services/QuickFeatureHelperService.swift */,
 				200000000000000000000030 /* Services/ScreenshotService.swift */,
 				200000000000000000000007 /* Support/URLRouter.swift */,
 				200000000000000000000031 /* Support/HUDPresenter.swift */,
@@ -247,6 +331,17 @@
 				210000000000000000000005 /* InfoPlist.strings */,
 			);
 			path = ClickMate;
+			sourceTree = "<group>";
+		};
+		C1B2C3D4E5F60708090A0001 /* ClickMateHelper */ = {
+			isa = PBXGroup;
+			children = (
+				B1B2C3D4E5F60708090A0001 /* AppDelegate.swift */,
+				B1B2C3D4E5F60708090A0002 /* Info.plist */,
+				B1B2C3D4E5F60708090A0003 /* ClickMateHelper.entitlements */,
+				A4B2C3D4E5F60708090A0004 /* InfoPlist.strings */,
+			);
+			path = ClickMateHelper;
 			sourceTree = "<group>";
 		};
 		300000000000000000000003 /* ClickMateFinderExtension */ = {
@@ -280,6 +375,7 @@
 				200000000000000000000019 /* FinderCommandToken.swift */,
 				20000000000000000000001A /* ActionNotifier.swift */,
 				200000000000000000000025 /* PendingCommandQueue.swift */,
+				20000000000000000000003B /* QuickFeatureHelperIPC.swift */,
 			);
 			path = Shared/ClickMateCore;
 			sourceTree = "<group>";
@@ -292,6 +388,7 @@
 				200000000000000000000033 /* QuickFeaturesTests.swift */,
 				200000000000000000000034 /* ScreenshotTests.swift */,
 				200000000000000000000036 /* QuickFeaturePermissionsTests.swift */,
+				20000000000000000000003C /* QuickFeatureHelperIPCTests.swift */,
 			);
 			path = Tests/ClickMateCoreTests;
 			sourceTree = "<group>";
@@ -300,6 +397,7 @@
 			isa = PBXGroup;
 			children = (
 				400000000000000000000001 /* ClickMate.app */,
+				B1B2C3D4E5F60708090A0004 /* ClickMateHelper.app */,
 				400000000000000000000002 /* ClickMateFinderExtension.appex */,
 				400000000000000000000003 /* ClickMateCoreTests.xctest */,
 			);
@@ -317,11 +415,13 @@
 				130000000000000000000001 /* Frameworks */,
 				160000000000000000000001 /* Resources */,
 				120000000000000000000001 /* Embed App Extensions */,
+				A2B2C3D4E5F60708090A0001 /* Embed Login Items */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				150000000000000000000001 /* PBXTargetDependency */,
+				B2B2C3D4E5F60708090A0001 /* PBXTargetDependency */,
 			);
 			name = ClickMate;
 			productName = ClickMate;
@@ -362,6 +462,23 @@
 			productReference = 400000000000000000000003 /* ClickMateCoreTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		D1B2C3D4E5F60708090A0001 /* ClickMateHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E2B2C3D4E5F60708090A0001 /* Build configuration list for PBXNativeTarget "ClickMateHelper" */;
+			buildPhases = (
+				E1B2C3D4E5F60708090A0001 /* Sources */,
+				F1B2C3D4E5F60708090A0001 /* Frameworks */,
+				A3B2C3D4E5F60708090A0001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ClickMateHelper;
+			productName = ClickMateHelper;
+			productReference = B1B2C3D4E5F60708090A0004 /* ClickMateHelper.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -372,16 +489,19 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
-					600000000000000000000001 = {
+				600000000000000000000001 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 					600000000000000000000002 = {
 						CreatedOnToolsVersion = 26.6;
 					};
-					600000000000000000000003 = {
+				600000000000000000000003 = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 600000000000000000000001;
 					};
+				};
+				D1B2C3D4E5F60708090A0001 = {
+					CreatedOnToolsVersion = 26.6;
 				};
 			};
 			buildConfigurationList = 700000000000000000000004 /* Build configuration list for PBXProject "ClickMate" */;
@@ -400,6 +520,7 @@
 			projectRoot = "";
 			targets = (
 				600000000000000000000001 /* ClickMate */,
+				D1B2C3D4E5F60708090A0001 /* ClickMateHelper */,
 				600000000000000000000002 /* ClickMateFinderExtension */,
 				600000000000000000000003 /* ClickMateCoreTests */,
 			);
@@ -426,6 +547,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A3B2C3D4E5F60708090A0001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4B2C3D4E5F60708090A0001 /* InfoPlist.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -443,11 +572,15 @@
 				100000000000000000000006 /* Views/PermissionsView.swift in Sources */,
 				100000000000000000000042 /* Views/QuickFeaturesView.swift in Sources */,
 				100000000000000000000043 /* Views/ScreenshotSelectionView.swift in Sources */,
+				100000000000000000000059 /* Views/LongScreenshotPreviewWindowController.swift in Sources */,
 				100000000000000000000044 /* Services/ScreenshotAnnotations.swift in Sources */,
+				100000000000000000000055 /* Services/LongScreenshot.swift in Sources */,
+				100000000000000000000056 /* Services/LongScreenshotCaptureController.swift in Sources */,
 				100000000000000000000045 /* Services/QuickFeaturePermissions.swift in Sources */,
 				100000000000000000000046 /* Services/FinderCutController.swift in Sources */,
 				100000000000000000000047 /* Services/GlobalHotKeyRegistrar.swift in Sources */,
 				100000000000000000000048 /* Services/QuickFeatureCoordinator.swift in Sources */,
+				10000000000000000000005B /* Services/QuickFeatureHelperService.swift in Sources */,
 				100000000000000000000049 /* Services/ScreenshotService.swift in Sources */,
 				100000000000000000000007 /* Support/URLRouter.swift in Sources */,
 				10000000000000000000004A /* Support/HUDPresenter.swift in Sources */,
@@ -467,6 +600,7 @@
 				100000000000000000000020 /* FinderCommandToken.swift in Sources */,
 				100000000000000000000021 /* ActionNotifier.swift in Sources */,
 				10000000000000000000003B /* PendingCommandQueue.swift in Sources */,
+				10000000000000000000005C /* QuickFeatureHelperIPC.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -503,10 +637,15 @@
 				10000000000000000000004E /* QuickFeaturesTests.swift in Sources */,
 				10000000000000000000004F /* ScreenshotTests.swift in Sources */,
 				100000000000000000000050 /* Services/ScreenshotAnnotations.swift in Sources */,
+				100000000000000000000057 /* Services/LongScreenshot.swift in Sources */,
+				100000000000000000000058 /* Services/LongScreenshotCaptureController.swift in Sources */,
 				100000000000000000000051 /* Views/ScreenshotSelectionView.swift in Sources */,
+				10000000000000000000005A /* Views/LongScreenshotPreviewWindowController.swift in Sources */,
 				100000000000000000000052 /* Services/ScreenshotService.swift in Sources */,
 				100000000000000000000053 /* Services/QuickFeaturePermissions.swift in Sources */,
 				100000000000000000000054 /* QuickFeaturePermissionsTests.swift in Sources */,
+				10000000000000000000005E /* QuickFeatureHelperIPCTests.swift in Sources */,
+				10000000000000000000005F /* Services/QuickFeatureHelperService.swift in Sources */,
 				100000000000000000000040 /* UpdateChecker.swift in Sources */,
 				100000000000000000000032 /* AppConstants.swift in Sources */,
 				10000000000000000000002E /* AppLanguage.swift in Sources */,
@@ -524,6 +663,43 @@
 				100000000000000000000028 /* FileTemplate.swift in Sources */,
 				10000000000000000000003A /* ActionNotifier.swift in Sources */,
 				10000000000000000000003D /* PendingCommandQueue.swift in Sources */,
+				10000000000000000000005D /* QuickFeatureHelperIPC.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E1B2C3D4E5F60708090A0001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F60708090A0001 /* AppDelegate.swift in Sources */,
+				A1B2C3D4E5F60708090A0002 /* AppConstants.swift in Sources */,
+				A1B2C3D4E5F60708090A0003 /* AppLanguage.swift in Sources */,
+				A1B2C3D4E5F60708090A0004 /* FileTemplate.swift in Sources */,
+				A1B2C3D4E5F60708090A0005 /* MenuCommand.swift in Sources */,
+				A1B2C3D4E5F60708090A0006 /* ClickMatePreferences.swift in Sources */,
+				A1B2C3D4E5F60708090A0007 /* QuickFeatures.swift in Sources */,
+				A1B2C3D4E5F60708090A0008 /* PathFormatter.swift in Sources */,
+				A1B2C3D4E5F60708090A0009 /* FileCreator.swift in Sources */,
+				A1B2C3D4E5F60708090A000A /* FileHasher.swift in Sources */,
+				A1B2C3D4E5F60708090A000B /* AppDetector.swift in Sources */,
+				A1B2C3D4E5F60708090A000C /* FileActions.swift in Sources */,
+				A1B2C3D4E5F60708090A000D /* AppLauncher.swift in Sources */,
+				A1B2C3D4E5F60708090A000E /* Localization.swift in Sources */,
+				A1B2C3D4E5F60708090A000F /* FinderCommandToken.swift in Sources */,
+				A1B2C3D4E5F60708090A0010 /* ActionNotifier.swift in Sources */,
+				A1B2C3D4E5F60708090A0011 /* PendingCommandQueue.swift in Sources */,
+				A1B2C3D4E5F60708090A0012 /* Services/QuickFeaturePermissions.swift in Sources */,
+				A1B2C3D4E5F60708090A0013 /* Services/FinderCutController.swift in Sources */,
+				A1B2C3D4E5F60708090A0014 /* Services/GlobalHotKeyRegistrar.swift in Sources */,
+				A1B2C3D4E5F60708090A0015 /* Services/QuickFeatureCoordinator.swift in Sources */,
+				A1B2C3D4E5F60708090A0016 /* Services/ScreenshotService.swift in Sources */,
+				A1B2C3D4E5F60708090A0017 /* Services/ScreenshotAnnotations.swift in Sources */,
+				A1B2C3D4E5F60708090A0018 /* Services/LongScreenshot.swift in Sources */,
+				A1B2C3D4E5F60708090A0019 /* Services/LongScreenshotCaptureController.swift in Sources */,
+				A1B2C3D4E5F60708090A001A /* Views/ScreenshotSelectionView.swift in Sources */,
+				A1B2C3D4E5F60708090A001B /* Views/LongScreenshotPreviewWindowController.swift in Sources */,
+				A1B2C3D4E5F60708090A001C /* Support/HUDPresenter.swift in Sources */,
+				A1B2C3D4E5F60708090A001E /* QuickFeatureHelperIPC.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -539,6 +715,11 @@
 			isa = PBXTargetDependency;
 			target = 600000000000000000000001 /* ClickMate */;
 			targetProxy = 110000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		B2B2C3D4E5F60708090A0001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D1B2C3D4E5F60708090A0001 /* ClickMateHelper */;
+			targetProxy = C2B2C3D4E5F60708090A0001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -570,12 +751,23 @@
 			name = InfoPlist.strings;
 			sourceTree = "<group>";
 		};
+		A4B2C3D4E5F60708090A0004 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A4B2C3D4E5F60708090A0002 /* en */,
+				A4B2C3D4E5F60708090A0003 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		800000000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLICKMATE_BUILD_VERSION = 7;
+				CLICKMATE_MARKETING_VERSION = 1.3.2;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -636,6 +828,8 @@
 		800000000000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLICKMATE_BUILD_VERSION = 7;
+				CLICKMATE_MARKETING_VERSION = 1.3.2;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -731,13 +925,59 @@
 			};
 			name = Release;
 		};
+		D2B2C3D4E5F60708090A0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClickMateHelper/ClickMateHelper.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ClickMateHelper/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.clickmate.Helper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		D2B2C3D4E5F60708090A0002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClickMateHelper/ClickMateHelper.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ClickMateHelper/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zxacn.clickmate.Helper;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		800000000000000000000005 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = ClickMateFinderExtension/ClickMateFinderExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = AA8ZVDT74G;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClickMateFinderExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -759,7 +999,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = ClickMateFinderExtension/ClickMateFinderExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = AA8ZVDT74G;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ClickMateFinderExtension/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -825,6 +1065,15 @@
 			buildConfigurations = (
 				800000000000000000000007 /* Debug */,
 				800000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E2B2C3D4E5F60708090A0001 /* Build configuration list for PBXNativeTarget "ClickMateHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D2B2C3D4E5F60708090A0001 /* Debug */,
+				D2B2C3D4E5F60708090A0002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

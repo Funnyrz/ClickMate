@@ -20,6 +20,10 @@ enum URLRouter {
         switch url.host {
         case "processPendingCommands":
             processPendingCommands()
+        case ApplicationOpenRoute.host:
+            prepareForBackgroundAction()
+            openApplication(routeURL: url)
+            keepApplicationHidden()
         case "createFile":
             prepareForBackgroundAction()
             let templateID = queryItems.first { $0.name == "template" }?.value
@@ -156,15 +160,46 @@ enum URLRouter {
             return
         }
 
-        let opened = AppLauncher.openApplication(
+        AppLauncher.openApplication(
             command: command,
             applicationPath: applicationPath,
             urls: urls
-        )
+        ) { opened, error in
+            Task { @MainActor in
+                if opened {
+                    ActionNotifier.notify(titleKey: "notification.successTitle", bodyKey: "notification.opened")
+                } else {
+                    logger.error("Application open failed: \(error ?? "unknown error", privacy: .public)")
+                    ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
+                }
+            }
+        }
+    }
 
-        opened
-            ? ActionNotifier.notify(titleKey: "notification.successTitle", bodyKey: "notification.opened")
-            : ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
+    private static func openApplication(routeURL: URL) {
+        guard let route = ApplicationOpenRoute(url: routeURL) else {
+            logger.error("Rejected invalid application-open route")
+            ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
+            return
+        }
+
+        if let applicationPath = route.applicationPath {
+            let preferences = PreferencesStore().preferences
+            guard ApplicationOpenRoute.isAuthorizedPinnedApplication(
+                path: applicationPath,
+                pinnedApplicationPaths: preferences.pinnedApplicationPaths
+            ) else {
+                logger.error("Rejected application-open route for an unpinned application")
+                ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
+                return
+            }
+        }
+
+        openApplication(
+            command: route.command,
+            applicationPath: route.applicationPath,
+            urls: route.urls
+        )
     }
 
     private static func toggleHiddenFiles() {
