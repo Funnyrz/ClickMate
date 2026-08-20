@@ -2,7 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-ClickMate is a native macOS Finder context-menu enhancer built with SwiftUI, AppKit, and a Finder Sync extension. It adds a configurable `ClickMate` submenu to Finder so common file and folder actions are available directly from right-click menus.
+ClickMate is a native macOS Finder productivity tool built with SwiftUI, AppKit, and a Finder Sync extension. In addition to a configurable `ClickMate` context submenu, it provides global-shortcut actions such as Finder Cut and screenshots.
 
 ![ClickMate Finder menu](img/clickmate-menu-en.png)
 
@@ -19,7 +19,29 @@ ClickMate is a native macOS Finder context-menu enhancer built with SwiftUI, App
 - Hash helpers for SHA-256, SHA-1, and MD5.
 - File utilities for revealing parent folders, timestamped duplicates, aliases, moving items to a new folder, and compression.
 - Advanced helpers for metadata, image dimensions, and toggling hidden files.
-- Settings UI for menu layout, templates, app detection, pinned apps, and monitored folders.
+- Quick Features for Finder Cut, region capture, current-display capture, and scrolling capture with customizable global shortcuts.
+- Settings UI for menu layout, templates, app detection, pinned apps, monitored folders, Quick Features, and permission status.
+
+## Quick Features
+
+The Quick Features settings page lets you enable each action, record a global shortcut, or restore its default shortcut. Shortcuts must include Command or Control. ClickMate rejects duplicate assignments and reports combinations already reserved by macOS or another application.
+
+A lightweight `ClickMate Background Service` handles these shortcuts, so they continue working after the settings window or main application quits. Signed releases can register the service as a background login item. Unsigned development builds keep it running only for the current login session, so ClickMate must be reopened after logout or restart.
+
+### Finder Cut
+
+- The default shortcut is `⌘X`. Select files or folders in Finder, trigger Cut, navigate to the destination, and press `⌘V` to move them.
+- Pressing `⌘C` before pasting cancels the pending move and returns to a normal copy operation.
+- The shortcut is handled only while Finder is active and focus is outside a text field, avoiding interference with other applications or filename editing.
+- Accessibility permission is required for `ClickMate Background Service`.
+
+### Screenshot
+
+- The default shortcut is `⌃⌘S`, opening region selection on the display under the pointer.
+- Capture a selected region, the full display under the pointer, or a scrolling region that is automatically stitched while you scroll downward.
+- Annotate with rectangles, arrows, a pen, text, or redaction; choose colors and line widths; and undo, redo, or clear edits.
+- Copy the result to the clipboard or save it as a PNG. Scrolling captures open in a separate preview window for additional editing and export.
+- Screen Recording permission is required for `ClickMate Background Service`.
 
 ## Requirements
 
@@ -121,6 +143,21 @@ git tag -a v1.4 -m "Release v1.4"
 git push origin v1.4
 Scripts/release_github.sh v1.4
 ```
+
+To add a custom update summary to the GitHub release, create a Markdown file and pass it with `--notes-file` (or `-F`):
+
+```md
+## What's Changed
+
+- Added a new feature
+- Fixed an issue
+```
+
+```sh
+Scripts/release_github.sh v1.4 --notes-file ReleaseNotes/v1.4.md
+```
+
+The custom text is shown before GitHub's automatically generated commit and pull-request notes. Commit the notes file before creating the tag so the release record remains traceable. Without `--notes-file`, the script continues to use only automatically generated notes.
 
 The script also accepts `1.4` and normalizes it to `v1.4`. It requires a clean working tree; verifies that both bundle versions match; confirms that the local and `origin` tags both point at `HEAD`; rejects an existing release or a version that is not strictly newer than the latest published GitHub release; runs the test suite; builds and notarizes the DMG with `Scripts/package_signed_dmg.sh`; mounts it read-only to verify the app, Finder extension, versions, and `arm64` + `x86_64` executables; then creates the GitHub release and uploads the signed artifact.
 

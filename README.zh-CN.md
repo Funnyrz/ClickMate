@@ -2,7 +2,7 @@
 
 [English README](README.md)
 
-ClickMate, 中文名“右键大师”，是一个原生 macOS Finder 右键菜单增强工具。它基于 SwiftUI、AppKit 和 Finder Sync extension 构建，可以在 Finder 右键菜单中加入可配置的 `ClickMate` 子菜单，让常用文件和文件夹操作更顺手。
+ClickMate, 中文名“右键大师”，是一个原生 macOS Finder 效率工具。它基于 SwiftUI、AppKit 和 Finder Sync extension 构建，不仅可以在 Finder 右键菜单中加入可配置的 `ClickMate` 子菜单，还提供访达剪切、截图等可通过全局快捷键触发的快捷功能。
 
 ![右键大师访达右键菜单](img/clickmate-menu-zh-CN.png)
 
@@ -19,7 +19,29 @@ ClickMate, 中文名“右键大师”，是一个原生 macOS Finder 右键菜�
 - 哈希计算：SHA-256、SHA-1、MD5。
 - 文件工具：显示父级文件夹、带时间戳复制、创建替身、移动到新文件夹、压缩。
 - 高级工具：查看元数据、图片尺寸、切换隐藏文件显示。
-- 设置界面：菜单布局、文件模板、应用检测、固定应用、监控文件夹。
+- 快捷功能：访达剪切、区域截图、当前显示器截图和长截图，支持自定义全局快捷键。
+- 设置界面：菜单布局、文件模板、应用检测、固定应用、监控文件夹、快捷功能和权限状态。
+
+## 快捷功能
+
+在设置界面的“快捷功能”页面中，可以分别启用功能、录制全局快捷键或恢复默认快捷键。快捷键必须包含 Command 或 Control，ClickMate 会阻止重复快捷键，并提示被 macOS 或其他应用占用的组合。
+
+快捷功能由轻量的 `ClickMate Background Service` 运行，因此关闭设置窗口或退出主应用后仍可响应快捷键。正式签名版本可以注册为后台登录项；未签名开发版本只在当前登录会话中持续运行，注销或重启后需要再次打开 ClickMate。
+
+### 访达剪切
+
+- 默认快捷键为 `⌘X`。在 Finder 中选中文件或文件夹后触发剪切，再进入目标位置并按 `⌘V` 完成移动。
+- 粘贴前按 `⌘C` 可以取消待移动状态，恢复为普通复制操作。
+- 仅在 Finder 位于前台且焦点不在文本输入框时处理快捷键，避免影响其他应用和文件名编辑。
+- 需要为 `ClickMate Background Service` 开启辅助功能权限。
+
+### 截图
+
+- 默认快捷键为 `⌃⌘S`，从鼠标所在显示器开始选择截图区域。
+- 支持区域截图、鼠标所在显示器全屏截图，以及在选定区域中向下滚动并自动拼接的长截图。
+- 支持矩形、箭头、画笔、文字和打码标注，可切换颜色与线宽，并支持撤销、重做和清除。
+- 截图可以复制到剪贴板或保存为 PNG；长截图完成后会打开独立预览窗口继续编辑和导出。
+- 需要为 `ClickMate Background Service` 开启屏幕录制权限。
 
 ## 环境要求
 
@@ -121,6 +143,21 @@ git tag -a v1.4 -m "Release v1.4"
 git push origin v1.4
 Scripts/release_github.sh v1.4
 ```
+
+如需在发行版中加入自定义更新说明，先创建一个 Markdown 文件，并通过 `--notes-file`（或 `-F`）传入：
+
+```md
+## 本次更新
+
+- 新增某项功能
+- 修复某个问题
+```
+
+```sh
+Scripts/release_github.sh v1.4 --notes-file ReleaseNotes/v1.4.md
+```
+
+自定义说明会显示在 GitHub 自动生成的提交/合并记录之前。说明文件应在创建 tag 前提交，以保持发布记录可追溯；不传 `--notes-file` 时仍只使用 GitHub 自动生成的说明。
 
 脚本也接受 `1.4`，并会规范化为 `v1.4`。脚本要求工作区干净，并检查 bundle 版本、tag、目标 Release 和版本递增关系；随后运行测试，调用 `Scripts/package_signed_dmg.sh` 构建并公证 DMG，以只读方式挂载验证主应用、Helper、Finder Extension、版本号以及 `arm64` + `x86_64` 可执行文件，最后创建 GitHub Release 并上传正式签名 DMG。
 
