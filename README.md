@@ -116,7 +116,7 @@ The repository includes a helper script for creating a local unsigned DMG:
 Scripts/package_unsigned_dmg.sh
 ```
 
-The generated DMG can be copied to `/Applications` for local functional diagnostics, including the basic Finder Extension menu in safe folders. Its ad-hoc identity can change after rebuilds, so macOS may require Accessibility, Screen Recording, and Full Disk Access again. The packaging script intentionally removes the App Group entitlement: custom Finder settings synchronization, runtime status sharing, and automatic permission verification are unavailable. Do not use it for release or permission-identity stability acceptance.
+The generated DMG can be copied to `/Applications` for local functional diagnostics, including the default Finder Extension actions in safe folders. When the App Group is unavailable, actions that require the main app use a URL-based fallback instead of the shared command queue. Its ad-hoc identity can change after rebuilds, so macOS may require Accessibility, Screen Recording, and Full Disk Access again. The packaging script intentionally removes the App Group entitlement: custom Finder settings synchronization, runtime status sharing, and automatic permission verification remain unavailable. Do not use it for release or permission-identity stability acceptance.
 
 ## Package a Local Apple Development DMG
 

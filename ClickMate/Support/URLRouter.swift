@@ -11,11 +11,13 @@ enum URLRouter {
         guard url.scheme == AppConstants.urlScheme else { return }
         guard shouldHandle(url) else { return }
         logger.info("Handling URL \(url.absoluteString, privacy: .public)")
-        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        let urls = queryItems
-            .filter { $0.name == "url" }
-            .compactMap(\.value)
-            .compactMap(URL.init(string:)) ?? []
+
+        if let route = FinderActionRoute(url: url) {
+            prepareForBackgroundAction()
+            process(route.pendingCommand)
+            keepApplicationHidden()
+            return
+        }
 
         switch url.host {
         case "processPendingCommands":
@@ -23,19 +25,6 @@ enum URLRouter {
         case ApplicationOpenRoute.host:
             prepareForBackgroundAction()
             openApplication(routeURL: url)
-            keepApplicationHidden()
-        case "createFile":
-            prepareForBackgroundAction()
-            let templateID = queryItems.first { $0.name == "template" }?.value
-            createFile(templateID: templateID, directories: urls)
-            keepApplicationHidden()
-        case "toggleHiddenFiles":
-            prepareForBackgroundAction()
-            toggleHiddenFiles()
-            keepApplicationHidden()
-        case "compress":
-            prepareForBackgroundAction()
-            urls.forEach { NSWorkspace.shared.open($0) }
             keepApplicationHidden()
         default:
             break
@@ -49,22 +38,26 @@ enum URLRouter {
         prepareForBackgroundAction()
 
         for command in commands {
-            switch command.kind {
-            case .createFile:
-                createFile(templateID: command.templateID, directories: command.directoryURL.map { [$0] } ?? [])
-            case .copyHash:
-                copyHash(algorithm: command.hashAlgorithm, urls: command.urls)
-            case .openHere:
-                openHere(command: command.menuCommand, directory: command.directoryURL)
-            case .openApplication:
-                openApplication(command: command.menuCommand, applicationPath: command.applicationPath, urls: command.urls)
-            case .compress:
-                command.urls.forEach { NSWorkspace.shared.open($0) }
-            case .toggleHiddenFiles:
-                toggleHiddenFiles()
-            }
+            process(command)
         }
         keepApplicationHidden()
+    }
+
+    private static func process(_ command: PendingCommand) {
+        switch command.kind {
+        case .createFile:
+            createFile(templateID: command.templateID, directories: command.directoryURL.map { [$0] } ?? [])
+        case .copyHash:
+            copyHash(algorithm: command.hashAlgorithm, urls: command.urls)
+        case .openHere:
+            openHere(command: command.menuCommand, directory: command.directoryURL)
+        case .openApplication:
+            openApplication(command: command.menuCommand, applicationPath: command.applicationPath, urls: command.urls)
+        case .compress:
+            command.urls.forEach { NSWorkspace.shared.open($0) }
+        case .toggleHiddenFiles:
+            toggleHiddenFiles()
+        }
     }
 
     private static func shouldHandle(_ url: URL) -> Bool {

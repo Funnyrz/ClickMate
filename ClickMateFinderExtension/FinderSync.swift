@@ -674,8 +674,10 @@ class FinderSync: FIFinderSync {
             notifyFailure("notification.createFailed")
             return
         }
-        PendingCommandQueue.enqueue(.createFile(templateID: templateID, directoryURL: directory))
-        let opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
+        let opened = dispatchToContainingApp(
+            command: .createFile(templateID: templateID, directoryURL: directory),
+            fallbackRoute: .createFile(templateID: templateID, directory: directory)
+        )
         opened ? notifySuccess("notification.completed") : notifyFailure("notification.createFailed")
     }
 
@@ -746,8 +748,10 @@ class FinderSync: FIFinderSync {
             }
         case .compress:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            PendingCommandQueue.enqueue(.compress(urls: context.actionURLs))
-            AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
+            dispatchToContainingApp(
+                command: .compress(urls: context.actionURLs),
+                fallbackRoute: .compress(urls: context.actionURLs)
+            )
                 ? notifySuccess("notification.completed")
                 : notifyFailure("notification.actionFailed")
         case .metadata:
@@ -761,8 +765,10 @@ class FinderSync: FIFinderSync {
                 ? notifySuccess("notification.copied")
                 : notifyFailure("notification.actionFailed")
         case .toggleHiddenFiles:
-            PendingCommandQueue.enqueue(.toggleHiddenFiles())
-            AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
+            dispatchToContainingApp(
+                command: .toggleHiddenFiles(),
+                fallbackRoute: .toggleHiddenFiles
+            )
                 ? notifySuccess("notification.completed")
                 : notifyFailure("notification.actionFailed")
         case .newFile:
@@ -823,8 +829,10 @@ class FinderSync: FIFinderSync {
             notifyFailure("notification.noSelection")
             return
         }
-        PendingCommandQueue.enqueue(.copyHash(algorithm: algorithm, urls: context.actionURLs))
-        let opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
+        let opened = dispatchToContainingApp(
+            command: .copyHash(algorithm: algorithm, urls: context.actionURLs),
+            fallbackRoute: .copyHash(algorithm: algorithm, urls: context.actionURLs)
+        )
         if !opened {
             notifyFailure("notification.actionFailed")
         }
@@ -835,11 +843,28 @@ class FinderSync: FIFinderSync {
             notifyFailure("notification.openFailed")
             return
         }
-        PendingCommandQueue.enqueue(.openHere(command: command, directoryURL: directory))
-        let opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
+        let opened = dispatchToContainingApp(
+            command: .openHere(command: command, directoryURL: directory),
+            fallbackRoute: .openHere(command: command, directory: directory)
+        )
         if !opened {
             notifyFailure("notification.openFailed")
         }
+    }
+
+    private func dispatchToContainingApp(
+        command: PendingCommand,
+        fallbackRoute: FinderActionRoute
+    ) -> Bool {
+        guard sharedContainerAvailable else {
+            return AppLauncher.requestContainingAppToPerform(fallbackRoute)
+        }
+        PendingCommandQueue.enqueue(command)
+        return AppLauncher.openContainingApp(
+            action: "processPendingCommands",
+            urls: [],
+            activates: false
+        )
     }
 
     private func openApplication(command: MenuCommand, context: FinderContext) {

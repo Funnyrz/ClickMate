@@ -116,7 +116,7 @@ Scripts/package_signed_dmg.sh
 Scripts/package_unsigned_dmg.sh
 ```
 
-该 DMG 可以复制到 `/Applications`，用于验证安全目录中的基础 Finder Extension 右键菜单。临时签名可能随重新构建变化，因此 macOS 可能再次要求辅助功能、屏幕录制和完全磁盘访问权限。打包脚本会主动移除 App Group entitlement，因此自定义 Finder 配置同步、运行状态共享和自动权限验证不可用。请勿将其用于正式发布或权限身份稳定性验收。
+该 DMG 可以复制到 `/Applications`，用于验证安全目录中的默认 Finder Extension 右键操作。App Group 不可用时，需要主应用执行的操作会改用 URL 路由，而不是共享命令队列。临时签名可能随重新构建变化，因此 macOS 可能再次要求辅助功能、屏幕录制和完全磁盘访问权限。打包脚本会主动移除 App Group entitlement，因此自定义 Finder 配置同步、运行状态共享和自动权限验证仍不可用。请勿将其用于正式发布或权限身份稳定性验收。
 
 ## 打包本地 Apple Development DMG
 

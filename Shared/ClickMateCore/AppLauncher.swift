@@ -265,6 +265,151 @@ struct ApplicationOpenRoute: Equatable {
     }
 }
 
+enum FinderActionRoute: Equatable {
+    private enum Host {
+        static let createFile = "createFile"
+        static let copyHash = "copyHash"
+        static let openHere = "openHere"
+        static let compress = "compress"
+        static let toggleHiddenFiles = "toggleHiddenFiles"
+    }
+
+    case createFile(templateID: String, directory: URL)
+    case copyHash(algorithm: HashAlgorithm, urls: [URL])
+    case openHere(command: MenuCommand, directory: URL)
+    case compress(urls: [URL])
+    case toggleHiddenFiles
+
+    var url: URL? {
+        switch self {
+        case .createFile(let templateID, let directory):
+            guard !templateID.isEmpty else { return nil }
+            return Self.routeURL(
+                host: Host.createFile,
+                queryItems: [URLQueryItem(name: "template", value: templateID)],
+                urls: [directory]
+            )
+        case .copyHash(let algorithm, let urls):
+            return Self.routeURL(
+                host: Host.copyHash,
+                queryItems: [URLQueryItem(name: "algorithm", value: algorithm.rawValue)],
+                urls: urls
+            )
+        case .openHere(let command, let directory):
+            guard Self.isAllowedOpenHereCommand(command) else { return nil }
+            return Self.routeURL(
+                host: Host.openHere,
+                queryItems: [URLQueryItem(name: "command", value: command.rawValue)],
+                urls: [directory]
+            )
+        case .compress(let urls):
+            return Self.routeURL(host: Host.compress, queryItems: [], urls: urls)
+        case .toggleHiddenFiles:
+            return Self.routeURL(host: Host.toggleHiddenFiles, queryItems: [], urls: [])
+        }
+    }
+
+    var pendingCommand: PendingCommand {
+        switch self {
+        case .createFile(let templateID, let directory):
+            PendingCommand.createFile(templateID: templateID, directoryURL: directory)
+        case .copyHash(let algorithm, let urls):
+            PendingCommand.copyHash(algorithm: algorithm, urls: urls)
+        case .openHere(let command, let directory):
+            PendingCommand.openHere(command: command, directoryURL: directory)
+        case .compress(let urls):
+            PendingCommand.compress(urls: urls)
+        case .toggleHiddenFiles:
+            PendingCommand.toggleHiddenFiles()
+        }
+    }
+
+    init?(url: URL) {
+        guard url.scheme == AppConstants.urlScheme,
+              let host = url.host,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            return nil
+        }
+        let queryItems = components.queryItems ?? []
+
+        switch host {
+        case Host.createFile:
+            guard let templateID = Self.singleValue(named: "template", in: queryItems),
+                  !templateID.isEmpty,
+                  let directory = Self.fileURLs(in: queryItems, expectedCount: 1)?.first
+            else {
+                return nil
+            }
+            self = .createFile(templateID: templateID, directory: directory)
+        case Host.copyHash:
+            guard let algorithmValue = Self.singleValue(named: "algorithm", in: queryItems),
+                  let algorithm = HashAlgorithm(rawValue: algorithmValue),
+                  let urls = Self.fileURLs(in: queryItems),
+                  !urls.isEmpty
+            else {
+                return nil
+            }
+            self = .copyHash(algorithm: algorithm, urls: urls)
+        case Host.openHere:
+            guard let commandValue = Self.singleValue(named: "command", in: queryItems),
+                  let command = MenuCommand(rawValue: commandValue),
+                  Self.isAllowedOpenHereCommand(command),
+                  let directory = Self.fileURLs(in: queryItems, expectedCount: 1)?.first
+            else {
+                return nil
+            }
+            self = .openHere(command: command, directory: directory)
+        case Host.compress:
+            guard let urls = Self.fileURLs(in: queryItems), !urls.isEmpty else { return nil }
+            self = .compress(urls: urls)
+        case Host.toggleHiddenFiles:
+            guard queryItems.isEmpty else { return nil }
+            self = .toggleHiddenFiles
+        default:
+            return nil
+        }
+    }
+
+    private static func routeURL(
+        host: String,
+        queryItems: [URLQueryItem],
+        urls: [URL]
+    ) -> URL? {
+        guard urls.allSatisfy(\.isFileURL) else { return nil }
+        var components = URLComponents()
+        components.scheme = AppConstants.urlScheme
+        components.host = host
+        components.queryItems = queryItems + urls.map {
+            URLQueryItem(name: "url", value: $0.absoluteString)
+        }
+        return components.url
+    }
+
+    private static func singleValue(named name: String, in queryItems: [URLQueryItem]) -> String? {
+        let values = queryItems.filter { $0.name == name }.compactMap(\.value)
+        guard values.count == 1 else { return nil }
+        return values[0]
+    }
+
+    private static func fileURLs(
+        in queryItems: [URLQueryItem],
+        expectedCount: Int? = nil
+    ) -> [URL]? {
+        let values = queryItems.filter { $0.name == "url" }.compactMap(\.value)
+        if let expectedCount, values.count != expectedCount {
+            return nil
+        }
+        let urls = values.compactMap(URL.init(string:))
+        guard urls.count == values.count, urls.allSatisfy(\.isFileURL) else { return nil }
+        return urls
+    }
+
+    private static func isAllowedOpenHereCommand(_ command: MenuCommand) -> Bool {
+        command == .openTerminal || command == .openITerm
+    }
+}
+
 enum AppLauncher {
     @discardableResult
     static func openTerminal(at directory: URL) -> Bool {
@@ -369,6 +514,15 @@ enum AppLauncher {
         guard let url = ApplicationOpenRoute.url(pinnedApplicationPath: path, urls: urls) else {
             return false
         }
+        return openContainingApp(url: url, activates: activates)
+    }
+
+    @discardableResult
+    static func requestContainingAppToPerform(
+        _ action: FinderActionRoute,
+        activates: Bool = false
+    ) -> Bool {
+        guard let url = action.url else { return false }
         return openContainingApp(url: url, activates: activates)
     }
 

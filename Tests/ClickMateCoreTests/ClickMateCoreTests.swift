@@ -1623,6 +1623,88 @@ final class ClickMateCoreTests: XCTestCase {
         ))
     }
 
+    func testFinderActionRouteRoundTripsCreateFile() throws {
+        let directory = URL(fileURLWithPath: "/Users/example/项目 Files", isDirectory: true)
+        let url = try XCTUnwrap(FinderActionRoute.createFile(
+            templateID: "markdown",
+            directory: directory
+        ).url)
+
+        XCTAssertEqual(
+            FinderActionRoute(url: url),
+            .createFile(templateID: "markdown", directory: directory)
+        )
+    }
+
+    func testFinderActionRouteRoundTripsCopyHashWithMultipleFiles() throws {
+        let urls = [
+            URL(fileURLWithPath: "/Users/example/项目 Files/read me.md"),
+            URL(fileURLWithPath: "/Users/example/项目 Files/说明.txt")
+        ]
+        let url = try XCTUnwrap(FinderActionRoute.copyHash(
+            algorithm: .sha256,
+            urls: urls
+        ).url)
+
+        XCTAssertEqual(
+            FinderActionRoute(url: url),
+            .copyHash(algorithm: .sha256, urls: urls)
+        )
+    }
+
+    func testFinderActionRouteRoundTripsOpenHere() throws {
+        let directory = URL(fileURLWithPath: "/Users/example/项目 Files", isDirectory: true)
+        let url = try XCTUnwrap(FinderActionRoute.openHere(
+            command: .openITerm,
+            directory: directory
+        ).url)
+
+        XCTAssertEqual(
+            FinderActionRoute(url: url),
+            .openHere(command: .openITerm, directory: directory)
+        )
+    }
+
+    func testFinderActionRouteRoundTripsCompressAndToggleHiddenFiles() throws {
+        let urls = [
+            URL(fileURLWithPath: "/Users/example/Project/archive one.txt"),
+            URL(fileURLWithPath: "/Users/example/Project/archive two.txt")
+        ]
+        let compressURL = try XCTUnwrap(FinderActionRoute.compress(urls: urls).url)
+        let toggleURL = try XCTUnwrap(FinderActionRoute.toggleHiddenFiles.url)
+
+        XCTAssertEqual(FinderActionRoute(url: compressURL), .compress(urls: urls))
+        XCTAssertEqual(FinderActionRoute(url: toggleURL), .toggleHiddenFiles)
+    }
+
+    func testFinderActionRouteRejectsInvalidPayloads() throws {
+        let directory = URL(fileURLWithPath: "/Users/example/Project", isDirectory: true)
+        let webURL = try XCTUnwrap(URL(string: "https://example.com/file.txt"))
+
+        XCTAssertNil(FinderActionRoute.createFile(templateID: "", directory: directory).url)
+        XCTAssertNil(FinderActionRoute.copyHash(algorithm: .md5, urls: [webURL]).url)
+        XCTAssertNil(FinderActionRoute.openHere(command: .openVSCode, directory: directory).url)
+        XCTAssertNil(FinderActionRoute(url: webURL))
+
+        var invalidHash = URLComponents()
+        invalidHash.scheme = AppConstants.urlScheme
+        invalidHash.host = "copyHash"
+        invalidHash.queryItems = [
+            URLQueryItem(name: "algorithm", value: "SHA-512"),
+            URLQueryItem(name: "url", value: directory.absoluteString)
+        ]
+        XCTAssertNil(FinderActionRoute(url: try XCTUnwrap(invalidHash.url)))
+
+        var invalidOpenHere = URLComponents()
+        invalidOpenHere.scheme = AppConstants.urlScheme
+        invalidOpenHere.host = "openHere"
+        invalidOpenHere.queryItems = [
+            URLQueryItem(name: "command", value: MenuCommand.openVSCode.rawValue),
+            URLQueryItem(name: "url", value: directory.absoluteString)
+        ]
+        XCTAssertNil(FinderActionRoute(url: try XCTUnwrap(invalidOpenHere.url)))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
