@@ -238,6 +238,17 @@ struct QuickFeatureRuntimeSnapshot: Codable, Equatable {
     ) -> Bool {
         referenceDate.timeIntervalSince(updatedAt) > timeout
     }
+
+    func hasSamePresentedState(as other: Self) -> Bool {
+        pid == other.pid
+            && version == other.version
+            && permissions == other.permissions
+            && activeFeatures == other.activeFeatures
+            && failedFeatures == other.failedFeatures
+            && error == other.error
+            && lastProcessedCommandID == other.lastProcessedCommandID
+            && lastPermissionRequest == other.lastPermissionRequest
+    }
 }
 
 struct QuickFeatureHelperCommandQueue {

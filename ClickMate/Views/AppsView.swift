@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppsView: View {
     @EnvironmentObject private var store: PreferencesStore
+    @State private var detectedApps: [DetectedApplication] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -60,7 +61,7 @@ struct AppsView: View {
 
             HStack {
                 Button(L10n.string("button.refresh")) {
-                    store.preferences.detectedApplicationOrder = store.preferences.detectedApplicationOrder
+                    refreshDetectedApps()
                 }
                 Button(L10n.string("apps.pinApplication")) {
                     pinApplication()
@@ -71,10 +72,17 @@ struct AppsView: View {
                 Spacer()
             }
         }
+        .onAppear(perform: refreshDetectedApps)
+        .onChange(of: store.preferences.detectedApplicationOrder) {
+            refreshDetectedApps()
+        }
+        .onChange(of: store.preferences.removedDetectedApplicationBundleIDs) {
+            refreshDetectedApps()
+        }
     }
 
-    private var detectedApps: [DetectedApplication] {
-        AppDetector.detectedApplications(
+    private func refreshDetectedApps() {
+        detectedApps = AppDetector.detectedApplications(
             order: store.preferences.detectedApplicationOrder,
             removedBundleIdentifiers: store.preferences.removedDetectedApplicationBundleIDs
         )

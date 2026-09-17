@@ -42,7 +42,9 @@ final class QuickFeatureHelperService: ObservableObject {
     private let helperBundleURL: URL
     private let finderExtensionBundleURL: URL
     private let fullDiskAccessRecoveryStore: FullDiskAccessRecoveryStore
-    private var refreshTimer: Timer?
+    private var currentRuntimeSnapshot: QuickFeatureRuntimeSnapshot?
+    private var runtimeSnapshotRefreshTask: Task<Void, Never>?
+    private var runtimeStalenessTask: Task<Void, Never>?
     private var legacyMigrationRetryTask: Task<Void, Never>?
     private var lifecycleTask: Task<Void, Never>?
     private var lifecycleNeedsResynchronization = false
@@ -92,30 +94,30 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     var isRuntimeRunning: Bool {
-        validatedSnapshot(runtimeSnapshot) != nil
+        validatedSnapshot(currentRuntimeSnapshot) != nil
     }
 
     var permissions: QuickFeatureRuntimePermissions {
-        validatedSnapshot(runtimeSnapshot)?.permissions ?? QuickFeatureRuntimePermissions(
+        validatedSnapshot(currentRuntimeSnapshot)?.permissions ?? QuickFeatureRuntimePermissions(
             accessibilityGranted: false,
             screenRecordingGranted: false
         )
     }
 
     var failedFeatureIDs: Set<QuickFeatureID> {
-        validatedSnapshot(runtimeSnapshot)?.failedFeatures ?? []
+        validatedSnapshot(currentRuntimeSnapshot)?.failedFeatures ?? []
     }
 
     var runtimePID: Int32? {
-        validatedSnapshot(runtimeSnapshot)?.pid
+        validatedSnapshot(currentRuntimeSnapshot)?.pid
     }
 
     var runtimeVersion: String? {
-        validatedSnapshot(runtimeSnapshot)?.version
+        validatedSnapshot(currentRuntimeSnapshot)?.version
     }
 
     var lastHeartbeat: Date? {
-        validatedSnapshot(runtimeSnapshot)?.updatedAt
+        validatedSnapshot(currentRuntimeSnapshot)?.updatedAt
     }
 
     func permissionState(for kind: QuickFeaturePermissionKind) -> QuickFeaturePermissionState {
@@ -136,19 +138,16 @@ final class QuickFeatureHelperService: ObservableObject {
             migrateLegacyMainAppLoginItem()
         }
         synchronize(preferences: PreferencesStore.loadSnapshot())
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
-            }
-        }
         resumePendingFullDiskAccessRecoveryIfNeeded()
         refreshAllStatuses()
     }
 
     func stop() {
         guard isStarted else { return }
-        refreshTimer?.invalidate()
-        refreshTimer = nil
+        runtimeStalenessTask?.cancel()
+        runtimeStalenessTask = nil
+        runtimeSnapshotRefreshTask?.cancel()
+        runtimeSnapshotRefreshTask = nil
         legacyMigrationRetryTask?.cancel()
         legacyMigrationRetryTask = nil
         lifecycleTask?.cancel()
@@ -693,7 +692,10 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     func refresh() {
-        registrationStatus = service.status
+        let updatedRegistrationStatus = service.status
+        if registrationStatus != updatedRegistrationStatus {
+            registrationStatus = updatedRegistrationStatus
+        }
         refreshSnapshot()
         synchronizePermissionStates()
         if shouldRun,
@@ -709,7 +711,6 @@ final class QuickFeatureHelperService: ObservableObject {
             attemptedAutomaticRepair = true
             repair()
         }
-        NotificationCenter.default.post(name: .quickFeatureHelperStatusChanged, object: self)
     }
 
     private func requestPermission(_ kind: QuickFeaturePermissionKind) {
@@ -805,7 +806,7 @@ final class QuickFeatureHelperService: ObservableObject {
     @discardableResult
     private func refreshPermissionSnapshot(requestID: UUID?) async -> Bool {
         refreshSnapshot()
-        let previousUpdatedAt = validatedSnapshot(runtimeSnapshot)?.updatedAt
+        let previousUpdatedAt = validatedSnapshot(currentRuntimeSnapshot)?.updatedAt
         guard let command = enqueue(.refreshStatus) else { return false }
         logger.debug(
             "Permission refresh command enqueued command=\(command.id.uuidString, privacy: .public) activeRequest=\(requestID?.uuidString ?? "none", privacy: .public)"
@@ -839,7 +840,7 @@ final class QuickFeatureHelperService: ObservableObject {
         while Date.now < deadline {
             guard !Task.isCancelled else { return false }
             refreshSnapshot()
-            if let snapshot = validatedSnapshot(runtimeSnapshot),
+            if let snapshot = validatedSnapshot(currentRuntimeSnapshot),
                snapshot.lastProcessedCommandID == commandID {
                 let isNewSnapshot = previousUpdatedAt.map { snapshot.updatedAt > $0 } ?? true
                 if isNewSnapshot {
@@ -852,7 +853,7 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     private func permissionIsGranted(_ kind: QuickFeaturePermissionKind) -> Bool {
-        guard let snapshot = validatedSnapshot(runtimeSnapshot) else { return false }
+        guard let snapshot = validatedSnapshot(currentRuntimeSnapshot) else { return false }
         switch kind {
         case .accessibility:
             return snapshot.permissions.accessibilityGranted
@@ -865,7 +866,7 @@ final class QuickFeatureHelperService: ObservableObject {
         for request: QuickFeaturePermissionRequestContext
     ) -> Bool {
         guard let commandID = request.commandID,
-              let diagnostic = validatedSnapshot(runtimeSnapshot)?.lastPermissionRequest,
+              let diagnostic = validatedSnapshot(currentRuntimeSnapshot)?.lastPermissionRequest,
               diagnostic.commandID == commandID,
               diagnostic.kind == .screenRecording
         else { return false }
@@ -949,7 +950,7 @@ final class QuickFeatureHelperService: ObservableObject {
 
     private func synchronizePermissionStates() {
         let activeKind = permissionRequestTracker.context?.kind
-        guard let snapshot = validatedSnapshot(runtimeSnapshot) else {
+        guard let snapshot = validatedSnapshot(currentRuntimeSnapshot) else {
             for kind in QuickFeaturePermissionKind.allCases where kind != activeKind {
                 setPermissionState(.unknown, for: kind)
             }
@@ -961,7 +962,9 @@ final class QuickFeatureHelperService: ObservableObject {
             case .screenRecording: snapshot.permissions.screenRecordingGranted
             }
             if granted {
-                permissionFailureMessages[kind] = nil
+                if permissionFailureMessages[kind] != nil {
+                    permissionFailureMessages[kind] = nil
+                }
                 setPermissionState(.granted, for: kind)
             } else if kind != activeKind {
                 setPermissionState(
@@ -1148,7 +1151,7 @@ final class QuickFeatureHelperService: ObservableObject {
         while Date.now < deadline {
             guard !Task.isCancelled else { return false }
             refreshSnapshot()
-            if validatedSnapshot(runtimeSnapshot)?.lastProcessedCommandID == commandID {
+            if validatedSnapshot(currentRuntimeSnapshot)?.lastProcessedCommandID == commandID {
                 return true
             }
             try? await Task.sleep(for: .milliseconds(100))
@@ -1168,17 +1171,77 @@ final class QuickFeatureHelperService: ObservableObject {
         lastError = nil
     }
 
-    private func refreshSnapshot() {
-        guard let snapshot = QuickFeatureRuntimeSnapshotStore.load() else {
-            runtimeSnapshot = nil
-            return
+    @discardableResult
+    private func refreshSnapshot() -> Bool {
+        applyRuntimeSnapshot(QuickFeatureRuntimeSnapshotStore.load())
+    }
+
+    private func refreshSnapshotFromNotification() {
+        runtimeSnapshotRefreshTask?.cancel()
+        runtimeSnapshotRefreshTask = Task { [weak self] in
+            let snapshot = await Task.detached(priority: .utility) {
+                QuickFeatureRuntimeSnapshotStore.load()
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            if applyRuntimeSnapshot(snapshot) {
+                synchronizePermissionStates()
+            }
+        }
+    }
+
+    @discardableResult
+    private func applyRuntimeSnapshot(_ snapshot: QuickFeatureRuntimeSnapshot?) -> Bool {
+        guard let snapshot else {
+            runtimeStalenessTask?.cancel()
+            runtimeStalenessTask = nil
+            currentRuntimeSnapshot = nil
+            if runtimeSnapshot != nil {
+                runtimeSnapshot = nil
+                return true
+            }
+            return false
         }
         guard snapshotIdentityIsValid(snapshot) else {
-            runtimeSnapshot = nil
+            runtimeStalenessTask?.cancel()
+            runtimeStalenessTask = nil
+            currentRuntimeSnapshot = nil
+            if runtimeSnapshot != nil {
+                runtimeSnapshot = nil
+            }
             QuickFeatureRuntimeSnapshotStore.remove()
-            return
+            return true
         }
-        runtimeSnapshot = snapshot
+        let presentedStateChanged = runtimeSnapshot?.hasSamePresentedState(as: snapshot) != true
+        currentRuntimeSnapshot = snapshot
+        scheduleRuntimeStalenessCheck(for: snapshot)
+        if presentedStateChanged {
+            runtimeSnapshot = snapshot
+        }
+        return presentedStateChanged
+    }
+
+    private func scheduleRuntimeStalenessCheck(for snapshot: QuickFeatureRuntimeSnapshot) {
+        runtimeStalenessTask?.cancel()
+        let updatedAt = snapshot.updatedAt
+        let delay = max(
+            updatedAt.addingTimeInterval(QuickFeatureRuntimeSnapshot.staleTimeout).timeIntervalSinceNow,
+            0
+        )
+        runtimeStalenessTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled,
+                  let self,
+                  currentRuntimeSnapshot?.updatedAt == updatedAt,
+                  currentRuntimeSnapshot?.isStale() == true
+            else {
+                return
+            }
+            currentRuntimeSnapshot = nil
+            if runtimeSnapshot != nil {
+                runtimeSnapshot = nil
+            }
+            synchronizePermissionStates()
+        }
     }
 
     private func validatedSnapshot(
@@ -1281,12 +1344,9 @@ final class QuickFeatureHelperService: ObservableObject {
         case PreferencesChangeNotifier.name:
             synchronize(preferences: PreferencesStore.loadSnapshot())
         case QuickFeatureRuntimeSnapshotStore.notificationName:
-            refreshSnapshot()
-            synchronizePermissionStates()
-            NotificationCenter.default.post(name: .quickFeatureHelperStatusChanged, object: self)
+            refreshSnapshotFromNotification()
         case FinderExtensionRuntimeSnapshotStore.notificationName:
             refreshDiskAccessStatuses()
-            NotificationCenter.default.post(name: .quickFeatureHelperStatusChanged, object: self)
         default:
             refreshAllStatuses()
         }
@@ -1351,10 +1411,4 @@ private enum QuickFeatureCodeSignatureInspector {
             .path + "/"
         return path.hasPrefix(systemApplications) || path.hasPrefix(userApplications)
     }
-}
-
-extension Notification.Name {
-    static let quickFeatureHelperStatusChanged = Notification.Name(
-        "ClickMate.quickFeatureHelperStatusChanged"
-    )
 }

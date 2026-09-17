@@ -4,7 +4,6 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var store: PreferencesStore
     @EnvironmentObject private var updateCoordinator: UpdateCheckCoordinator
-    @ObservedObject private var helperService = QuickFeatureHelperService.shared
     @State private var selectedTab: SettingsTab = .menus
 
     var body: some View {
@@ -48,7 +47,7 @@ struct ContentView: View {
 
     private func refreshPermissionStatusesIfNeeded(for tab: SettingsTab) {
         guard tab == .permissions || tab == .quickFeatures else { return }
-        helperService.refreshAllStatuses()
+        QuickFeatureHelperService.shared.refreshAllStatuses()
     }
 
     private var updateFooter: some View {

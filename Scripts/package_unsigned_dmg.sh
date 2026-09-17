@@ -38,6 +38,7 @@ xcodebuild build \
   -derivedDataPath "$DERIVED_DATA" \
   ARCHS="${ARCHITECTURES[*]}" \
   ONLY_ACTIVE_ARCH=NO \
+  ENABLE_CODE_COVERAGE=NO \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGN_IDENTITY="" \
   AD_HOC_CODE_SIGNING_ALLOWED=NO
@@ -83,6 +84,11 @@ for binary in "${BINARIES[@]}"; do
   if ! lipo "$binary" -verify_arch "${ARCHITECTURES[@]}"; then
     echo "error: executable is not Universal 2: $binary" >&2
     lipo -archs "$binary" >&2 || true
+    exit 1
+  fi
+
+  if otool -l "$binary" | grep -q '__LLVM_COV'; then
+    echo "error: release executable contains code coverage instrumentation: $binary" >&2
     exit 1
   fi
 

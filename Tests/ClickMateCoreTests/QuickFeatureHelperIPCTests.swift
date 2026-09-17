@@ -220,6 +220,27 @@ final class QuickFeatureHelperIPCTests: XCTestCase {
         XCTAssertNil(store.load())
     }
 
+    func testRuntimeHeartbeatDoesNotChangePresentedState() {
+        let initial = QuickFeatureRuntimeSnapshot(
+            pid: 123,
+            version: "1.2.3",
+            updatedAt: Date(timeIntervalSinceReferenceDate: 1_000),
+            permissions: QuickFeatureRuntimePermissions(
+                accessibilityGranted: true,
+                screenRecordingGranted: false
+            ),
+            activeFeatures: [.finderCut]
+        )
+        var heartbeat = initial
+        heartbeat.updatedAt = initial.updatedAt.addingTimeInterval(2)
+
+        XCTAssertNotEqual(initial, heartbeat)
+        XCTAssertTrue(initial.hasSamePresentedState(as: heartbeat))
+
+        heartbeat.failedFeatures = [.screenshot]
+        XCTAssertFalse(initial.hasSamePresentedState(as: heartbeat))
+    }
+
     func testRuntimeSnapshotDecodesLegacyPayloadWithoutPermissionDiagnostic() throws {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }

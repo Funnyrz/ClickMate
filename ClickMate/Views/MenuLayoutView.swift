@@ -10,26 +10,38 @@ struct MenuLayoutView: View {
             Text(L10n.string("layout.description"))
                 .foregroundStyle(.secondary)
 
-            List {
-                ForEach(store.preferences.orderedVisibleMenuGroups) { group in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(group.title)
-                                Text(statusText(for: group))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(store.preferences.orderedVisibleMenuGroups) { group in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(group.title)
+                                    Text(statusText(for: group))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Toggle(L10n.string("layout.foldIntoApp"), isOn: foldedBinding(for: group))
+                                    .toggleStyle(.switch)
                             }
-                            Spacer()
-                            Toggle(L10n.string("layout.foldIntoApp"), isOn: foldedBinding(for: group))
-                                .toggleStyle(.switch)
-                        }
 
-                        shortcutControls(for: group)
-                            .padding(.leading, 20)
+                            shortcutControls(for: group)
+                                .padding(.leading, 20)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+
+                        Divider()
+                            .padding(.leading, 12)
                     }
-                    .padding(.vertical, 4)
                 }
+            }
+            .background(.background)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(.quaternary)
             }
         }
     }

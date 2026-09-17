@@ -66,6 +66,7 @@ xcodebuild archive \
   -allowProvisioningUpdates \
   ARCHS="${ARCHITECTURES[*]}" \
   ONLY_ACTIVE_ARCH=NO \
+  ENABLE_CODE_COVERAGE=NO \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
   CODE_SIGN_STYLE=Automatic \
   CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
@@ -136,6 +137,10 @@ for index in "${!BUNDLES[@]}"; do
   fi
   if ! lipo "$executable" -verify_arch "${ARCHITECTURES[@]}"; then
     echo "error: executable is not Universal 2: $executable" >&2
+    exit 1
+  fi
+  if otool -l "$executable" | grep -q '__LLVM_COV'; then
+    echo "error: release executable contains code coverage instrumentation: $executable" >&2
     exit 1
   fi
 
