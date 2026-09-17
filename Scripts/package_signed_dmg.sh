@@ -135,10 +135,12 @@ for index in "${!BUNDLES[@]}"; do
     echo "error: hardened runtime is not enabled: $actual_bundle_id" >&2
     exit 1
   fi
-  if ! lipo "$executable" -verify_arch "${ARCHITECTURES[@]}"; then
-    echo "error: executable is not Universal 2: $executable" >&2
-    exit 1
-  fi
+  for architecture in "${ARCHITECTURES[@]}"; do
+    if ! lipo "$executable" -verify_arch "$architecture"; then
+      echo "error: executable is missing $architecture: $executable" >&2
+      exit 1
+    fi
+  done
   if otool -l "$executable" | grep -q '__LLVM_COV'; then
     echo "error: release executable contains code coverage instrumentation: $executable" >&2
     exit 1

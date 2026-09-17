@@ -81,11 +81,13 @@ for binary in "${BINARIES[@]}"; do
     exit 1
   fi
 
-  if ! lipo "$binary" -verify_arch "${ARCHITECTURES[@]}"; then
-    echo "error: executable is not Universal 2: $binary" >&2
-    lipo -archs "$binary" >&2 || true
-    exit 1
-  fi
+  for architecture in "${ARCHITECTURES[@]}"; do
+    if ! lipo "$binary" -verify_arch "$architecture"; then
+      echo "error: executable is missing $architecture: $binary" >&2
+      lipo -archs "$binary" >&2 || true
+      exit 1
+    fi
+  done
 
   if otool -l "$binary" | grep -q '__LLVM_COV'; then
     echo "error: release executable contains code coverage instrumentation: $binary" >&2
