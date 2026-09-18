@@ -95,6 +95,7 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(MenuCommandGroup.group(for: .openVSCode), .openHere)
         XCTAssertEqual(MenuCommandGroup.group(for: .md5), .hash)
         XCTAssertEqual(MenuCommandGroup.group(for: .compress), .fileUtilities)
+        XCTAssertEqual(MenuCommandGroup.group(for: .editArchive), .fileUtilities)
         XCTAssertEqual(MenuCommandGroup.group(for: .metadata), .advanced)
         XCTAssertEqual(MenuCommandGroup.copy.titleKey, "menu.copy")
         XCTAssertEqual(MenuCommandGroup.openHere.commands, [.openTerminal, .openITerm, .openVSCode, .openCursor, .openBBEdit, .openSublime])
@@ -1064,6 +1065,16 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(decoded.urls, [file])
     }
 
+    func testPendingEditArchiveCommandRoundTrips() throws {
+        let archive = URL(fileURLWithPath: "/Users/example/Project/app.jar")
+        let command = PendingCommand.editArchive(url: archive)
+
+        let decoded = try JSONDecoder().decode(PendingCommand.self, from: JSONEncoder().encode(command))
+
+        XCTAssertEqual(decoded.kind, .editArchive)
+        XCTAssertEqual(decoded.urls, [archive])
+    }
+
     func testPendingToggleHiddenFilesCommandRoundTrips() throws {
         let command = PendingCommand.toggleHiddenFiles()
 
@@ -1677,12 +1688,24 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(FinderActionRoute(url: toggleURL), .toggleHiddenFiles)
     }
 
+    func testFinderActionRouteRoundTripsArchiveEditor() throws {
+        let archive = URL(fileURLWithPath: "/Users/example/Project/app.jar")
+        let route = FinderActionRoute.editArchive(url: archive)
+        let url = try XCTUnwrap(route.url)
+
+        XCTAssertEqual(FinderActionRoute(url: url), route)
+        XCTAssertTrue(route.requiresVisibleWindow)
+        XCTAssertTrue(ArchiveEditorRoute.supports(archive))
+        XCTAssertFalse(ArchiveEditorRoute.supports(URL(fileURLWithPath: "/Users/example/Project/readme.txt")))
+    }
+
     func testFinderActionRouteRejectsInvalidPayloads() throws {
         let directory = URL(fileURLWithPath: "/Users/example/Project", isDirectory: true)
         let webURL = try XCTUnwrap(URL(string: "https://example.com/file.txt"))
 
         XCTAssertNil(FinderActionRoute.createFile(templateID: "", directory: directory).url)
         XCTAssertNil(FinderActionRoute.copyHash(algorithm: .md5, urls: [webURL]).url)
+        XCTAssertNil(FinderActionRoute.editArchive(url: URL(fileURLWithPath: "/Users/example/Project/readme.txt")).url)
         XCTAssertNil(FinderActionRoute.openHere(command: .openVSCode, directory: directory).url)
         XCTAssertNil(FinderActionRoute(url: webURL))
 

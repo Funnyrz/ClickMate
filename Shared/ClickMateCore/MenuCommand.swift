@@ -23,6 +23,7 @@ enum MenuCommand: String, Codable, CaseIterable, Identifiable {
     case createAlias
     case moveToNewFolder
     case compress
+    case editArchive
     case metadata
     case imageDimensions
     case toggleHiddenFiles
@@ -57,6 +58,7 @@ enum MenuCommand: String, Codable, CaseIterable, Identifiable {
         case .createAlias: return "command.createAlias"
         case .moveToNewFolder: return "command.moveToNewFolder"
         case .compress: return "command.compress"
+        case .editArchive: return "command.editArchive"
         case .metadata: return "command.metadata"
         case .imageDimensions: return "command.imageDimensions"
         case .toggleHiddenFiles: return "command.toggleHiddenFiles"
@@ -105,6 +107,8 @@ enum MenuCommand: String, Codable, CaseIterable, Identifiable {
             return "folder.badge.plus"
         case .compress:
             return "archivebox"
+        case .editArchive:
+            return "shippingbox"
         case .metadata:
             return "info.circle"
         case .imageDimensions:
@@ -197,7 +201,7 @@ enum MenuCommandGroup: String, Codable, CaseIterable, Identifiable, Hashable {
         case .hash:
             return [.sha256, .sha1, .md5]
         case .fileUtilities:
-            return [.revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress]
+            return [.revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress, .editArchive]
         case .advanced:
             return [.metadata, .imageDimensions, .toggleHiddenFiles]
         }
@@ -213,7 +217,7 @@ enum MenuCommandGroup: String, Codable, CaseIterable, Identifiable, Hashable {
             return .openHere
         case .sha256, .sha1, .md5:
             return .hash
-        case .revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress:
+        case .revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress, .editArchive:
             return .fileUtilities
         case .metadata, .imageDimensions, .toggleHiddenFiles:
             return .advanced

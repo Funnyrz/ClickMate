@@ -1,5 +1,6 @@
 "tab.menus" = "菜单";
 "tab.templates" = "模板";
+"tab.archive" = "压缩包编辑";
 "tab.apps" = "应用";
 "tab.quickFeatures" = "快捷功能";
 "tab.permissions" = "权限";
@@ -17,6 +18,30 @@
 "templates.description" = "这些模板会用于访达空白处和文件夹右键菜单。";
 "templates.customExtension" = "自定义扩展名";
 "templates.addTemplate" = "添加模板";
+"archive.emptyTitle" = "打开 JAR 或 ZIP 压缩包";
+"archive.emptyDescription" = "无需解压整个压缩包，即可浏览并安全编辑文本配置文件。";
+"archive.windowTitle" = "压缩包编辑器";
+"archive.open" = "打开压缩包…";
+"archive.currentFile" = "当前压缩包：%@";
+"archive.autoBackup" = "首次保存前自动备份";
+"archive.search" = "搜索文件";
+"archive.signed" = "可能已签名";
+"archive.signedTitle" = "当前 JAR 可能包含数字签名";
+"archive.signedMessage" = "修改任意文件都可能导致数字签名失效，并使 Java 无法加载该 JAR。仅在确认需要时继续。";
+"archive.cancel" = "取消";
+"archive.continue" = "继续编辑";
+"archive.errorTitle" = "压缩包错误";
+"archive.ok" = "好";
+"archive.modified" = "已修改";
+"archive.save" = "保存";
+"archive.notTextTitle" = "该文件不是可编辑文本";
+"archive.notTextDescription" = "ClickMate 仅支持编辑 UTF-8 文本文件。";
+"archive.selectTitle" = "选择一个文件";
+"archive.selectDescription" = "从压缩包中选择文本文件以查看或编辑。";
+"archive.unsavedTitle" = "要打开另一个压缩包吗？";
+"archive.unsavedMessage" = "当前文件存在尚未保存的修改。";
+"archive.saveAndOpen" = "保存并打开";
+"archive.discardAndOpen" = "放弃修改并打开";
 
 "apps.title" = "应用";
 "apps.description" = "右键大师会检测常用终端和编辑器，访达动作只会调用已安装的应用。";
@@ -173,6 +198,7 @@
 "command.createAlias" = "制作替身";
 "command.moveToNewFolder" = "移到新文件夹";
 "command.compress" = "压缩";
+"command.editArchive" = "编辑 JAR / ZIP";
 "command.metadata" = "复制元数据摘要";
 "command.imageDimensions" = "复制图片尺寸";
 "command.toggleHiddenFiles" = "切换隐藏文件显示";

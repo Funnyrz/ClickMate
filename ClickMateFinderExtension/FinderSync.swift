@@ -264,7 +264,8 @@ class FinderSync: FIFinderSync {
         appendCommandSubmenu(
             title: L10n.string("menu.fileUtilities"),
             group: .fileUtilities,
-            commands: orderedEnabledCommands(from: [.revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress]),
+            commands: orderedEnabledCommands(from: [.revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress, .editArchive])
+                .filter { $0 != .editArchive || archiveEditorURL(in: context) != nil },
             to: menu,
             context: context
         )
@@ -584,6 +585,8 @@ class FinderSync: FIFinderSync {
             return context.destinationDirectory != nil
         case .toggleHiddenFiles:
             return true
+        case .editArchive:
+            return archiveEditorURL(in: context) != nil
         case .sha256, .sha1, .md5, .copyPOSIXPath, .copyFileURL, .copyShellPath, .copyFilename, .copyBasename, .copyExtension, .copyParentPath, .revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress, .metadata, .imageDimensions, .openVSCode, .openCursor, .openBBEdit, .openSublime:
             return !context.actionURLs.isEmpty
         case .newFile:
@@ -754,6 +757,11 @@ class FinderSync: FIFinderSync {
             )
                 ? notifySuccess("notification.completed")
                 : notifyFailure("notification.actionFailed")
+        case .editArchive:
+            guard let archiveURL = archiveEditorURL(in: context) else {
+                return notifyFailure("notification.noSelection")
+            }
+            openArchiveEditor(at: archiveURL)
         case .metadata:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
             FileActions.writeToPasteboard(FileActions.metadataSummary(urls: context.actionURLs))
@@ -850,6 +858,29 @@ class FinderSync: FIFinderSync {
         if !opened {
             notifyFailure("notification.openFailed")
         }
+    }
+
+    private func openArchiveEditor(at url: URL) {
+        let opened: Bool
+        if sharedContainerAvailable {
+            PendingCommandQueue.enqueue(.editArchive(url: url))
+            opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: true)
+        } else {
+            opened = AppLauncher.requestContainingAppToPerform(.editArchive(url: url), activates: true)
+        }
+        if !opened {
+            notifyFailure("notification.openFailed")
+        }
+    }
+
+    private func archiveEditorURL(in context: FinderContext) -> URL? {
+        guard context.actionURLs.count == 1,
+              let url = context.actionURLs.first,
+              ArchiveEditorRoute.supports(url)
+        else {
+            return nil
+        }
+        return url
     }
 
     private func dispatchToContainingApp(

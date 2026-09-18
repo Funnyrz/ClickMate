@@ -101,6 +101,10 @@
 		10000000000000000000005D /* QuickFeatureHelperIPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003B /* QuickFeatureHelperIPC.swift */; };
 		10000000000000000000005E /* QuickFeatureHelperIPCTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003C /* QuickFeatureHelperIPCTests.swift */; };
 		10000000000000000000005F /* Services/QuickFeatureHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003A /* Services/QuickFeatureHelperService.swift */; };
+		100000000000000000000060 /* ZipArchiveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003D /* ZipArchiveEditor.swift */; };
+		100000000000000000000061 /* ZipArchiveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003D /* ZipArchiveEditor.swift */; };
+		100000000000000000000062 /* Views/ArchiveEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003E /* Views/ArchiveEditorView.swift */; };
+		100000000000000000000063 /* ZipArchiveEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000003F /* ZipArchiveEditorTests.swift */; };
 		A1B2C3D4E5F60708090A0001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1B2C3D4E5F60708090A0001 /* AppDelegate.swift */; };
 		A1B2C3D4E5F60708090A0002 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* AppConstants.swift */; };
 		A1B2C3D4E5F60708090A0003 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* AppLanguage.swift */; };
@@ -243,6 +247,9 @@
 		20000000000000000000003A /* Services/QuickFeatureHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/QuickFeatureHelperService.swift; sourceTree = "<group>"; };
 		20000000000000000000003B /* QuickFeatureHelperIPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeatureHelperIPC.swift; sourceTree = "<group>"; };
 		20000000000000000000003C /* QuickFeatureHelperIPCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickFeatureHelperIPCTests.swift; sourceTree = "<group>"; };
+		20000000000000000000003D /* ZipArchiveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipArchiveEditor.swift; sourceTree = "<group>"; };
+		20000000000000000000003E /* Views/ArchiveEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ArchiveEditorView.swift; sourceTree = "<group>"; };
+		20000000000000000000003F /* ZipArchiveEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipArchiveEditorTests.swift; sourceTree = "<group>"; };
 		400000000000000000000001 /* ClickMate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickMate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000002 /* ClickMateFinderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClickMateFinderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000003 /* ClickMateCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClickMateCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -306,6 +313,7 @@
 				200000000000000000000003 /* Views/MenusView.swift */,
 				200000000000000000000026 /* Views/MenuLayoutView.swift */,
 				200000000000000000000004 /* Views/TemplatesView.swift */,
+				20000000000000000000003E /* Views/ArchiveEditorView.swift */,
 				200000000000000000000005 /* Views/AppsView.swift */,
 				200000000000000000000006 /* Views/PermissionsView.swift */,
 				200000000000000000000029 /* Views/QuickFeaturesView.swift */,
@@ -376,6 +384,7 @@
 				20000000000000000000001A /* ActionNotifier.swift */,
 				200000000000000000000025 /* PendingCommandQueue.swift */,
 				20000000000000000000003B /* QuickFeatureHelperIPC.swift */,
+				20000000000000000000003D /* ZipArchiveEditor.swift */,
 			);
 			path = Shared/ClickMateCore;
 			sourceTree = "<group>";
@@ -389,6 +398,7 @@
 				200000000000000000000034 /* ScreenshotTests.swift */,
 				200000000000000000000036 /* QuickFeaturePermissionsTests.swift */,
 				20000000000000000000003C /* QuickFeatureHelperIPCTests.swift */,
+				20000000000000000000003F /* ZipArchiveEditorTests.swift */,
 			);
 			path = Tests/ClickMateCoreTests;
 			sourceTree = "<group>";
@@ -601,6 +611,8 @@
 				100000000000000000000021 /* ActionNotifier.swift in Sources */,
 				10000000000000000000003B /* PendingCommandQueue.swift in Sources */,
 				10000000000000000000005C /* QuickFeatureHelperIPC.swift in Sources */,
+				100000000000000000000060 /* ZipArchiveEditor.swift in Sources */,
+				100000000000000000000062 /* Views/ArchiveEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -646,6 +658,8 @@
 				100000000000000000000054 /* QuickFeaturePermissionsTests.swift in Sources */,
 				10000000000000000000005E /* QuickFeatureHelperIPCTests.swift in Sources */,
 				10000000000000000000005F /* Services/QuickFeatureHelperService.swift in Sources */,
+				100000000000000000000061 /* ZipArchiveEditor.swift in Sources */,
+				100000000000000000000063 /* ZipArchiveEditorTests.swift in Sources */,
 				100000000000000000000040 /* UpdateChecker.swift in Sources */,
 				100000000000000000000032 /* AppConstants.swift in Sources */,
 				10000000000000000000002E /* AppLanguage.swift in Sources */,
@@ -766,8 +780,8 @@
 		800000000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLICKMATE_BUILD_VERSION = 8;
-				CLICKMATE_MARKETING_VERSION = 1.3.3;
+				CLICKMATE_BUILD_VERSION = 9;
+				CLICKMATE_MARKETING_VERSION = 1.3.4;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -828,8 +842,8 @@
 		800000000000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLICKMATE_BUILD_VERSION = 8;
-				CLICKMATE_MARKETING_VERSION = 1.3.3;
+				CLICKMATE_BUILD_VERSION = 9;
+				CLICKMATE_MARKETING_VERSION = 1.3.4;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_COVERAGE_MAPPING = NO;
 				CLANG_ANALYZER_NONNULL = YES;

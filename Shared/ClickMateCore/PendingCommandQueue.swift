@@ -8,6 +8,7 @@ struct PendingCommand: Codable, Equatable, Identifiable {
         case openHere
         case openApplication
         case compress
+        case editArchive
         case toggleHiddenFiles
     }
 
@@ -135,6 +136,19 @@ struct PendingCommand: Codable, Equatable, Identifiable {
             templateID: nil,
             directoryURL: nil,
             urls: urls,
+            hashAlgorithm: nil,
+            menuCommand: nil,
+            applicationPath: nil
+        )
+    }
+
+    static func editArchive(url: URL) -> PendingCommand {
+        PendingCommand(
+            id: UUID(),
+            kind: .editArchive,
+            templateID: nil,
+            directoryURL: nil,
+            urls: [url],
             hashAlgorithm: nil,
             menuCommand: nil,
             applicationPath: nil

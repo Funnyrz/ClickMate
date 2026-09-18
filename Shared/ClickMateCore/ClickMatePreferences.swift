@@ -30,6 +30,7 @@ struct ClickMatePreferences: Codable, Equatable {
     var finderMonitoringPolicyVersion: Int
     var quickFeatureSettings: [QuickFeatureSettings]
     var screenshotSettings: ScreenshotSettings
+    var archiveEditorCreatesBackup: Bool
 
     init(
         enabledCommands: Set<MenuCommand>,
@@ -54,7 +55,8 @@ struct ClickMatePreferences: Codable, Equatable {
         quickFeatureDefaultsVersion: Int = Self.currentQuickFeatureDefaultsVersion,
         finderMonitoringPolicyVersion: Int = Self.currentFinderMonitoringPolicyVersion,
         quickFeatureSettings: [QuickFeatureSettings] = QuickFeatureSettings.defaults,
-        screenshotSettings: ScreenshotSettings = .defaults
+        screenshotSettings: ScreenshotSettings = .defaults,
+        archiveEditorCreatesBackup: Bool = true
     ) {
         self.removedMenuCommands = removedMenuCommands
         self.enabledCommands = enabledCommands.subtracting(removedMenuCommands)
@@ -79,9 +81,10 @@ struct ClickMatePreferences: Codable, Equatable {
         self.finderMonitoringPolicyVersion = finderMonitoringPolicyVersion
         self.quickFeatureSettings = QuickFeatureSettings.normalized(quickFeatureSettings)
         self.screenshotSettings = screenshotSettings
+        self.archiveEditorCreatesBackup = archiveEditorCreatesBackup
     }
 
-    static let currentMenuLayoutDefaultsVersion = 1
+    static let currentMenuLayoutDefaultsVersion = 2
     static let currentQuickFeatureDefaultsVersion = 1
     static let currentFinderMonitoringPolicyVersion = 4
 
@@ -108,7 +111,8 @@ struct ClickMatePreferences: Codable, Equatable {
         quickFeatureDefaultsVersion: currentQuickFeatureDefaultsVersion,
         finderMonitoringPolicyVersion: currentFinderMonitoringPolicyVersion,
         quickFeatureSettings: QuickFeatureSettings.defaults,
-        screenshotSettings: .defaults
+        screenshotSettings: .defaults,
+        archiveEditorCreatesBackup: true
     )
 
     var orderedMenuCommands: [MenuCommand] {
@@ -222,6 +226,7 @@ struct ClickMatePreferences: Codable, Equatable {
         case finderMonitoringPolicyVersion
         case quickFeatureSettings
         case screenshotSettings
+        case archiveEditorCreatesBackup
     }
 
     init(from decoder: Decoder) throws {
@@ -271,6 +276,7 @@ struct ClickMatePreferences: Codable, Equatable {
             decodedQuickFeatures ?? QuickFeatureSettings.defaults
         )
         screenshotSettings = try container.decodeIfPresent(ScreenshotSettings.self, forKey: .screenshotSettings) ?? .defaults
+        archiveEditorCreatesBackup = try container.decodeIfPresent(Bool.self, forKey: .archiveEditorCreatesBackup) ?? true
     }
 
     mutating func migrateMenuLayoutDefaultsIfNeeded() -> Bool {
@@ -278,8 +284,11 @@ struct ClickMatePreferences: Codable, Equatable {
             return false
         }
 
-        if foldedMenuGroups == Set(MenuCommandGroup.allCases) {
+        if menuLayoutDefaultsVersion < 1, foldedMenuGroups == Set(MenuCommandGroup.allCases) {
             foldedMenuGroups = MenuCommandGroup.defaultFoldedGroups
+        }
+        if menuLayoutDefaultsVersion < 2 {
+            enabledCommands.insert(.editArchive)
         }
         menuLayoutDefaultsVersion = Self.currentMenuLayoutDefaultsVersion
         return true

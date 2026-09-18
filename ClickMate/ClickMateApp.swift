@@ -12,7 +12,7 @@ struct ClickMateApp: App {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(updateCoordinator)
-                .frame(width: 760, height: 520)
+                .frame(width: 980, height: 620)
                 .fixedSize()
                 .onOpenURL { url in
                     URLRouter.handle(url)

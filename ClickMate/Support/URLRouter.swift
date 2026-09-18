@@ -13,6 +13,10 @@ enum URLRouter {
         logger.info("Handling URL \(url.absoluteString, privacy: .public)")
 
         if let route = FinderActionRoute(url: url) {
+            if route.requiresVisibleWindow {
+                process(route.pendingCommand)
+                return
+            }
             prepareForBackgroundAction()
             process(route.pendingCommand)
             keepApplicationHidden()
@@ -35,12 +39,17 @@ enum URLRouter {
         let commands = PendingCommandQueue.drain()
         guard !commands.isEmpty else { return }
         logger.info("Processing \(commands.count, privacy: .public) pending command(s)")
-        prepareForBackgroundAction()
+        let requiresVisibleWindow = commands.contains { $0.kind == .editArchive }
+        if !requiresVisibleWindow {
+            prepareForBackgroundAction()
+        }
 
         for command in commands {
             process(command)
         }
-        keepApplicationHidden()
+        if !requiresVisibleWindow {
+            keepApplicationHidden()
+        }
     }
 
     private static func process(_ command: PendingCommand) {
@@ -55,6 +64,12 @@ enum URLRouter {
             openApplication(command: command.menuCommand, applicationPath: command.applicationPath, urls: command.urls)
         case .compress:
             command.urls.forEach { NSWorkspace.shared.open($0) }
+        case .editArchive:
+            guard let url = command.urls.first, ArchiveEditorRoute.supports(url) else {
+                ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
+                return
+            }
+            openArchiveEditor(at: url)
         case .toggleHiddenFiles:
             toggleHiddenFiles()
         }
@@ -79,6 +94,10 @@ enum URLRouter {
             NSApp.setActivationPolicy(.accessory)
             NSApp.hide(nil)
         }
+    }
+
+    private static func openArchiveEditor(at url: URL) {
+        ArchiveEditorWindowController.shared.openArchive(at: url)
     }
 
     private static func createFile(templateID: String?, directories: [URL]) {

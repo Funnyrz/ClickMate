@@ -18,6 +18,7 @@ ClickMate, 中文名“右键大师”，是一个原生 macOS Finder 效率工�
 - 打开辅助：Terminal、iTerm2、VS Code、Cursor、BBEdit、Sublime Text，以及自定义固定应用。
 - 哈希计算：SHA-256、SHA-1、MD5。
 - 文件工具：显示父级文件夹、带时间戳复制、创建替身、移动到新文件夹、压缩。
+- JAR/ZIP 原位编辑：右键单个 `.jar` 或 `.zip` 文件，选择“文件工具 → 编辑 JAR / ZIP”，即可在不解压整个压缩包的前提下浏览目录树并编辑 UTF-8 文本文件。编辑器以独立、可调整大小的窗口打开，支持首次保存前备份，并会在修改已签名 JAR 前发出提醒。
 - 高级工具：查看元数据、图片尺寸、切换隐藏文件显示。
 - 快捷功能：访达剪切、区域截图、当前显示器截图和长截图，支持自定义全局快捷键。
 - 设置界面：菜单布局、文件模板、应用检测、固定应用、监控文件夹、快捷功能和权限状态。
@@ -134,7 +135,7 @@ Team ID 应以 `codesign` 或证书 Subject OU 为准，不能只相信证书显
 
 ## 在本地发布 GitHub Release
 
-请先安装并登录 GitHub CLI，同时确保本机具备 `curl`、`jq` 和 Xcode 命令行工具。将 `ClickMate/Info.plist` 与 `ClickMateFinderExtension/Info.plist` 中的 `CFBundleShortVersionString` 更新为相同版本，并提交发布改动。
+请先安装并登录 GitHub CLI，同时确保本机具备 `curl`、`jq` 和 Xcode 命令行工具。更新 Debug 与 Release 构建配置中的 `CLICKMATE_MARKETING_VERSION` 和 `CLICKMATE_BUILD_VERSION`，然后提交发布改动。
 
 运行发布脚本前，需要配置 `CLICKMATE_DEVELOPMENT_TEAM`、`CLICKMATE_SIGNING_IDENTITY` 与 `CLICKMATE_NOTARY_PROFILE`，并自行创建和推送 release tag：
 

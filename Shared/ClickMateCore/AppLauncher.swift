@@ -265,12 +265,20 @@ struct ApplicationOpenRoute: Equatable {
     }
 }
 
+enum ArchiveEditorRoute {
+    static func supports(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        return ["jar", "zip"].contains(url.pathExtension.lowercased())
+    }
+}
+
 enum FinderActionRoute: Equatable {
     private enum Host {
         static let createFile = "createFile"
         static let copyHash = "copyHash"
         static let openHere = "openHere"
         static let compress = "compress"
+        static let editArchive = "editArchive"
         static let toggleHiddenFiles = "toggleHiddenFiles"
     }
 
@@ -278,6 +286,7 @@ enum FinderActionRoute: Equatable {
     case copyHash(algorithm: HashAlgorithm, urls: [URL])
     case openHere(command: MenuCommand, directory: URL)
     case compress(urls: [URL])
+    case editArchive(url: URL)
     case toggleHiddenFiles
 
     var url: URL? {
@@ -304,6 +313,9 @@ enum FinderActionRoute: Equatable {
             )
         case .compress(let urls):
             return Self.routeURL(host: Host.compress, queryItems: [], urls: urls)
+        case .editArchive(let url):
+            guard ArchiveEditorRoute.supports(url) else { return nil }
+            return Self.routeURL(host: Host.editArchive, queryItems: [], urls: [url])
         case .toggleHiddenFiles:
             return Self.routeURL(host: Host.toggleHiddenFiles, queryItems: [], urls: [])
         }
@@ -319,9 +331,16 @@ enum FinderActionRoute: Equatable {
             PendingCommand.openHere(command: command, directoryURL: directory)
         case .compress(let urls):
             PendingCommand.compress(urls: urls)
+        case .editArchive(let url):
+            PendingCommand.editArchive(url: url)
         case .toggleHiddenFiles:
             PendingCommand.toggleHiddenFiles()
         }
+    }
+
+    var requiresVisibleWindow: Bool {
+        if case .editArchive = self { return true }
+        return false
     }
 
     init?(url: URL) {
@@ -363,6 +382,13 @@ enum FinderActionRoute: Equatable {
         case Host.compress:
             guard let urls = Self.fileURLs(in: queryItems), !urls.isEmpty else { return nil }
             self = .compress(urls: urls)
+        case Host.editArchive:
+            guard let url = Self.fileURLs(in: queryItems, expectedCount: 1)?.first,
+                  ArchiveEditorRoute.supports(url)
+            else {
+                return nil
+            }
+            self = .editArchive(url: url)
         case Host.toggleHiddenFiles:
             guard queryItems.isEmpty else { return nil }
             self = .toggleHiddenFiles

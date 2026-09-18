@@ -1,5 +1,6 @@
 "tab.menus" = "Menus";
 "tab.templates" = "Templates";
+"tab.archive" = "Archive Editor";
 "tab.apps" = "Apps";
 "tab.quickFeatures" = "Quick Features";
 "tab.permissions" = "Permissions";
@@ -17,6 +18,30 @@
 "templates.description" = "Templates are used by the Finder background menu and by selected folders.";
 "templates.customExtension" = "Custom extension";
 "templates.addTemplate" = "Add Template";
+"archive.emptyTitle" = "Open a JAR or ZIP archive";
+"archive.emptyDescription" = "Browse and safely edit text configuration files without unpacking the whole archive.";
+"archive.windowTitle" = "Archive Editor";
+"archive.open" = "Open Archive…";
+"archive.currentFile" = "Current archive: %@";
+"archive.autoBackup" = "Back up before first save";
+"archive.search" = "Search files";
+"archive.signed" = "Signed archive";
+"archive.signedTitle" = "This JAR may be signed";
+"archive.signedMessage" = "Changing any file can invalidate its digital signature and prevent Java from loading it. Continue only if this is expected.";
+"archive.cancel" = "Cancel";
+"archive.continue" = "Continue Editing";
+"archive.errorTitle" = "Archive Error";
+"archive.ok" = "OK";
+"archive.modified" = "Modified";
+"archive.save" = "Save";
+"archive.notTextTitle" = "This file is not editable text";
+"archive.notTextDescription" = "Only UTF-8 text files can be edited in ClickMate.";
+"archive.selectTitle" = "Select a file";
+"archive.selectDescription" = "Choose a text file from the archive to view or edit it.";
+"archive.unsavedTitle" = "Open another archive?";
+"archive.unsavedMessage" = "The current file has unsaved changes.";
+"archive.saveAndOpen" = "Save and Open";
+"archive.discardAndOpen" = "Discard Changes and Open";
 
 "apps.title" = "Applications";
 "apps.description" = "ClickMate detects common terminals and editors. Finder actions use installed apps only.";
@@ -173,6 +198,7 @@
 "command.createAlias" = "Create Alias";
 "command.moveToNewFolder" = "Move to New Folder";
 "command.compress" = "Compress";
+"command.editArchive" = "Edit JAR / ZIP";
 "command.metadata" = "Copy Metadata Summary";
 "command.imageDimensions" = "Copy Image Dimensions";
 "command.toggleHiddenFiles" = "Toggle Hidden Files";

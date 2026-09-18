@@ -18,6 +18,7 @@ ClickMate is a native macOS Finder productivity tool built with SwiftUI, AppKit,
 - Open helpers for Terminal, iTerm2, VS Code, Cursor, BBEdit, Sublime Text, and pinned custom apps.
 - Hash helpers for SHA-256, SHA-1, and MD5.
 - File utilities for revealing parent folders, timestamped duplicates, aliases, moving items to a new folder, and compression.
+- JAR/ZIP in-place editor: right-click one `.jar` or `.zip` file and choose **File Utilities → Edit JAR / ZIP** to browse its directory tree and edit UTF-8 text files without unpacking it. It opens in a dedicated, resizable editor window, offers an optional first-save backup, and warns before changing signed JARs.
 - Advanced helpers for metadata, image dimensions, and toggling hidden files.
 - Quick Features for Finder Cut, region capture, current-display capture, and scrolling capture with customizable global shortcuts.
 - Settings UI for menu layout, templates, app detection, pinned apps, monitored folders, Quick Features, and permission status.
@@ -134,7 +135,7 @@ Use the Team ID reported by `codesign`/the certificate subject OU; the text in a
 
 ## Publish a GitHub Release Locally
 
-Install and authenticate GitHub CLI, and make sure `curl`, `jq`, and the Xcode command-line tools are available. Update `CFBundleShortVersionString` in both `ClickMate/Info.plist` and `ClickMateFinderExtension/Info.plist`, then commit the release changes.
+Install and authenticate GitHub CLI, and make sure `curl`, `jq`, and the Xcode command-line tools are available. Update `CLICKMATE_MARKETING_VERSION` and `CLICKMATE_BUILD_VERSION` in the Debug and Release build configurations, then commit the release changes.
 
 Create and push the release tag yourself, configure `CLICKMATE_DEVELOPMENT_TEAM`, `CLICKMATE_SIGNING_IDENTITY`, and `CLICKMATE_NOTARY_PROFILE`, then run the release script:
 
