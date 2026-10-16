@@ -39,7 +39,7 @@ enum URLRouter {
         let commands = PendingCommandQueue.drain()
         guard !commands.isEmpty else { return }
         logger.info("Processing \(commands.count, privacy: .public) pending command(s)")
-        let requiresVisibleWindow = commands.contains { $0.kind == .editArchive }
+        let requiresVisibleWindow = commands.contains { [.editArchive, .compress, .copyHash, .batchFileAction].contains($0.kind) }
         if !requiresVisibleWindow {
             prepareForBackgroundAction()
         }
@@ -63,7 +63,10 @@ enum URLRouter {
         case .openApplication:
             openApplication(command: command.menuCommand, applicationPath: command.applicationPath, urls: command.urls)
         case .compress:
-            command.urls.forEach { NSWorkspace.shared.open($0) }
+            FileTaskCenter.shared.compress(command.urls)
+        case .batchFileAction:
+            guard let action = command.menuCommand else { return }
+            FileTaskCenter.shared.batch(command.urls, command: action)
         case .editArchive:
             guard let url = command.urls.first, ArchiveEditorRoute.supports(url) else {
                 ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
@@ -85,12 +88,14 @@ enum URLRouter {
     }
 
     private static func prepareForBackgroundAction() {
+        guard AppWindows.canHideForBackgroundAction else { return }
         NSApp.setActivationPolicy(.accessory)
         NSApp.hide(nil)
     }
 
     private static func keepApplicationHidden() {
         DispatchQueue.main.async {
+            guard AppWindows.canHideForBackgroundAction else { return }
             NSApp.setActivationPolicy(.accessory)
             NSApp.hide(nil)
         }
@@ -141,16 +146,7 @@ enum URLRouter {
             return
         }
 
-        let result = FileHasher.hashResult(for: urls, algorithm: algorithm)
-        guard result.succeeded else {
-            logger.error("Hash failed for \(result.failures.joined(separator: ","), privacy: .public)")
-            ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.permissionRequired")
-            return
-        }
-
-        FileActions.writeToPasteboard(result.text)
-            ? ActionNotifier.notify(titleKey: "notification.successTitle", bodyKey: "notification.copied")
-            : ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.actionFailed")
+        FileTaskCenter.shared.hash(urls, algorithm: algorithm)
     }
 
     private static func openHere(command: MenuCommand?, directory: URL?) {

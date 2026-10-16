@@ -3,6 +3,12 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class ScreenshotSelectionController {
+    #if DEBUG
+    /// Render the actual annotation view against an isolated documentation image.
+    static func documentationView(model: ScreenshotSessionModel, size: CGSize) -> NSView {
+        ScreenshotSelectionView(frame: CGRect(origin: .zero, size: size), model: model)
+    }
+    #endif
     private let model: ScreenshotSessionModel
     private let screen: NSScreen
     private let targetProcessIdentifier: pid_t?

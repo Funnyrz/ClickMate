@@ -31,6 +31,7 @@ struct ClickMatePreferences: Codable, Equatable {
     var quickFeatureSettings: [QuickFeatureSettings]
     var screenshotSettings: ScreenshotSettings
     var archiveEditorCreatesBackup: Bool
+    var finderToolsEnabled: Bool
 
     init(
         enabledCommands: Set<MenuCommand>,
@@ -56,7 +57,8 @@ struct ClickMatePreferences: Codable, Equatable {
         finderMonitoringPolicyVersion: Int = Self.currentFinderMonitoringPolicyVersion,
         quickFeatureSettings: [QuickFeatureSettings] = QuickFeatureSettings.defaults,
         screenshotSettings: ScreenshotSettings = .defaults,
-        archiveEditorCreatesBackup: Bool = true
+        archiveEditorCreatesBackup: Bool = true,
+        finderToolsEnabled: Bool = true
     ) {
         self.removedMenuCommands = removedMenuCommands
         self.enabledCommands = enabledCommands.subtracting(removedMenuCommands)
@@ -82,6 +84,7 @@ struct ClickMatePreferences: Codable, Equatable {
         self.quickFeatureSettings = QuickFeatureSettings.normalized(quickFeatureSettings)
         self.screenshotSettings = screenshotSettings
         self.archiveEditorCreatesBackup = archiveEditorCreatesBackup
+        self.finderToolsEnabled = finderToolsEnabled
     }
 
     static let currentMenuLayoutDefaultsVersion = 2
@@ -112,7 +115,8 @@ struct ClickMatePreferences: Codable, Equatable {
         finderMonitoringPolicyVersion: currentFinderMonitoringPolicyVersion,
         quickFeatureSettings: QuickFeatureSettings.defaults,
         screenshotSettings: .defaults,
-        archiveEditorCreatesBackup: true
+        archiveEditorCreatesBackup: true,
+        finderToolsEnabled: true
     )
 
     var orderedMenuCommands: [MenuCommand] {
@@ -227,6 +231,7 @@ struct ClickMatePreferences: Codable, Equatable {
         case quickFeatureSettings
         case screenshotSettings
         case archiveEditorCreatesBackup
+        case finderToolsEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -277,6 +282,7 @@ struct ClickMatePreferences: Codable, Equatable {
         )
         screenshotSettings = try container.decodeIfPresent(ScreenshotSettings.self, forKey: .screenshotSettings) ?? .defaults
         archiveEditorCreatesBackup = try container.decodeIfPresent(Bool.self, forKey: .archiveEditorCreatesBackup) ?? true
+        finderToolsEnabled = try container.decodeIfPresent(Bool.self, forKey: .finderToolsEnabled) ?? true
     }
 
     mutating func migrateMenuLayoutDefaultsIfNeeded() -> Bool {
@@ -410,8 +416,35 @@ private extension Array where Element: Hashable {
 }
 
 final class PreferencesStore: ObservableObject {
-    private enum Storage {
-        static let filename = "ClickMatePreferences.json"
+    private enum Storage { static let filename = "ClickMatePreferences.json" }
+
+    enum StorageState: Equatable {
+        case firstRun
+        case loaded
+        case corrupt(String)
+        case saveFailure(String)
+
+        var isCorrupt: Bool { if case .corrupt = self { true } else { false } }
+        var message: String? {
+            switch self {
+            case let .corrupt(message), let .saveFailure(message): message
+            case .firstRun, .loaded: nil
+            }
+        }
+    }
+
+    enum StorageError: LocalizedError {
+        case readOnly
+        case recoveryRequired
+        case failed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .readOnly: L10n.string("settingsData.readOnly")
+            case .recoveryRequired: L10n.string("settingsData.recoveryRequired")
+            case let .failed(message): message
+            }
+        }
     }
 
     @Published var preferences: ClickMatePreferences {
@@ -420,45 +453,57 @@ final class PreferencesStore: ObservableObject {
             save(preferences)
         }
     }
+    @Published private(set) var storageState: StorageState
 
     private let fileURL: URL
     private let allowsWrites: Bool
     private let publishesPinnedApplications: Bool
     private let saveQueue = DispatchQueue(label: "\(AppConstants.bundleIdentifier).preferences.save")
+    private let persistence: Persistence
+    private let reference = StoreReference()
     private var isReloading = false
 
-    init(
-        fileURL: URL = PreferencesStore.sharedPreferencesURL,
-        allowsWrites: Bool = true
-    ) {
+    var backupURL: URL { persistence.backupURL }
+    var canRestoreBackup: Bool {
+        guard let data = try? Data(contentsOf: backupURL) else { return false }
+        return (try? JSONDecoder().decode(ClickMatePreferences.self, from: data)) != nil
+    }
+
+    init(fileURL: URL = PreferencesStore.sharedPreferencesURL, allowsWrites: Bool = true) {
         self.fileURL = fileURL
         self.allowsWrites = allowsWrites
         self.publishesPinnedApplications = allowsWrites
             && fileURL.standardizedFileURL == Self.fallbackPreferencesURL.standardizedFileURL
-        if allowsWrites {
+        if allowsWrites, fileURL.standardizedFileURL == Self.sharedPreferencesURL.standardizedFileURL {
             Self.migrateFallbackPreferencesIfNeeded(to: fileURL)
         }
         let loaded = Self.loadWithMigration(from: fileURL)
         self.preferences = loaded.preferences
-        publishPinnedApplicationsIfNeeded(loaded.preferences)
-        if allowsWrites,
-           (!FileManager.default.fileExists(atPath: fileURL.path) || loaded.didMigrate) {
-            saveSynchronously(preferences)
+        self.storageState = loaded.state
+        self.persistence = Persistence(fileURL: fileURL, state: loaded.state)
+        reference.store = self
+        if !loaded.state.isCorrupt { publishPinnedApplicationsIfNeeded(loaded.preferences) }
+        if allowsWrites, loaded.state == .firstRun || loaded.didMigrate {
+            saveSynchronously(preferences, successState: loaded.state == .firstRun ? .firstRun : .loaded)
         }
     }
 
+    /// Reset is an explicit recovery action. Ordinary setting changes never replace corrupt data.
     func reset() {
-        preferences = .defaults
+        guard allowsWrites else { return }
+        waitForPendingSaves()
+        if saveSynchronously(.defaults, allowCorruptOverwrite: true) {
+            replaceLoadedPreferences(.defaults)
+        }
     }
 
     func reload() {
-        isReloading = true
+        waitForPendingSaves()
         let loaded = Self.loadWithMigration(from: fileURL)
-        preferences = loaded.preferences
-        isReloading = false
-        if loaded.didMigrate {
-            saveSynchronously(preferences)
-        }
+        replaceLoadedPreferences(loaded.preferences)
+        storageState = loaded.state
+        saveQueue.sync { persistence.state = loaded.state }
+        if loaded.didMigrate { saveSynchronously(preferences) }
     }
 
     func replaceLoadedPreferences(_ loadedPreferences: ClickMatePreferences) {
@@ -468,7 +513,53 @@ final class PreferencesStore: ObservableObject {
     }
 
     func waitForPendingSaves() {
-        saveQueue.sync {}
+        storageState = saveQueue.sync { persistence.state }
+    }
+
+    func retrySave() {
+        guard !storageState.isCorrupt else { return }
+        save(preferences)
+    }
+
+    func restoreBackup() throws {
+        guard allowsWrites else { throw StorageError.readOnly }
+        waitForPendingSaves()
+        var recovered = try JSONDecoder().decode(ClickMatePreferences.self, from: Data(contentsOf: backupURL))
+        _ = recovered.migrateMenuLayoutDefaultsIfNeeded()
+        _ = recovered.migrateQuickFeatureDefaultsIfNeeded()
+        _ = recovered.migrateFinderMonitoringPolicyIfNeeded()
+        guard saveSynchronously(recovered, allowCorruptOverwrite: true) else {
+            throw StorageError.failed(storageState.message ?? L10n.string("settingsData.saveFailed"))
+        }
+        replaceLoadedPreferences(recovered)
+    }
+
+    func exportConfiguration() throws -> Data {
+        waitForPendingSaves()
+        guard !storageState.isCorrupt else { throw StorageError.recoveryRequired }
+        let configuration = PortableConfiguration(preferences: preferences)
+        try configuration.validate()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(configuration)
+    }
+
+    func previewImport(_ data: Data) throws -> PortableConfiguration {
+        let configuration = try JSONDecoder().decode(PortableConfiguration.self, from: data)
+        try configuration.validate()
+        return configuration
+    }
+
+    func importConfiguration(_ configuration: PortableConfiguration) throws {
+        guard allowsWrites else { throw StorageError.readOnly }
+        try configuration.validate()
+        waitForPendingSaves()
+        guard !storageState.isCorrupt else { throw StorageError.recoveryRequired }
+        let candidate = configuration.applying(to: preferences)
+        guard saveSynchronously(candidate) else {
+            throw StorageError.failed(storageState.message ?? L10n.string("settingsData.saveFailed"))
+        }
+        replaceLoadedPreferences(candidate)
     }
 
     static func loadSnapshot(fileURL: URL = PreferencesStore.sharedPreferencesURL) -> ClickMatePreferences {
@@ -480,20 +571,33 @@ final class PreferencesStore: ObservableObject {
     }
 
     private func save(_ preferences: ClickMatePreferences) {
-        guard allowsWrites else { return }
-        publishPinnedApplicationsIfNeeded(preferences)
-        let fileURL = fileURL
+        guard allowsWrites, !storageState.isCorrupt else { return }
+        let persistence = persistence
+        let reference = reference
         saveQueue.async {
-            Self.write(preferences, to: fileURL)
+            persistence.write(preferences)
+            DispatchQueue.main.async { reference.store?.applySaveState() }
         }
     }
 
-    private func saveSynchronously(_ preferences: ClickMatePreferences) {
-        guard allowsWrites else { return }
-        publishPinnedApplicationsIfNeeded(preferences)
-        let fileURL = fileURL
-        saveQueue.sync {
-            Self.write(preferences, to: fileURL)
+    @discardableResult
+    private func saveSynchronously(
+        _ preferences: ClickMatePreferences, allowCorruptOverwrite: Bool = false,
+        preserveBackup: Bool = false, successState: StorageState = .loaded
+    ) -> Bool {
+        guard allowsWrites else { return false }
+        let succeeded = saveQueue.sync {
+            persistence.write(preferences, allowCorruptOverwrite: allowCorruptOverwrite, preserveBackup: preserveBackup, successState: successState)
+        }
+        applySaveState()
+        if succeeded { publishPinnedApplicationsIfNeeded(preferences) }
+        return succeeded
+    }
+
+    private func applySaveState() {
+        storageState = saveQueue.sync { persistence.state }
+        if storageState == .loaded || storageState == .firstRun {
+            publishPinnedApplicationsIfNeeded(preferences)
         }
     }
 
@@ -502,56 +606,82 @@ final class PreferencesStore: ObservableObject {
         PinnedApplicationSyncStore.publish(paths: preferences.pinnedApplicationPaths)
     }
 
-    private static func write(_ preferences: ClickMatePreferences, to fileURL: URL) {
-        guard let data = try? JSONEncoder().encode(preferences) else { return }
-        do {
-            let directoryURL = fileURL.deletingLastPathComponent()
-            if directoryURL.path != fileURL.path {
-                try FileManager.default.createDirectory(
-                    at: directoryURL,
-                    withIntermediateDirectories: true
-                )
+    // The queue owns mutable persistence state. Only the main-queue notification touches
+    // the weak store reference; waitForPendingSaves also publishes synchronously for callers.
+    private final class StoreReference: @unchecked Sendable { weak var store: PreferencesStore? }
+
+    private final class Persistence: @unchecked Sendable {
+        let fileURL: URL
+        let backupURL: URL
+        var state: StorageState
+
+        init(fileURL: URL, state: StorageState) {
+            self.fileURL = fileURL
+            self.backupURL = fileURL.deletingPathExtension().appendingPathExtension("backup.json")
+            self.state = state
+        }
+
+        @discardableResult
+        func write(
+            _ preferences: ClickMatePreferences, allowCorruptOverwrite: Bool = false,
+            preserveBackup: Bool = false, successState: StorageState = .loaded
+        ) -> Bool {
+            if state.isCorrupt, !allowCorruptOverwrite { return false }
+            do {
+                let data = try JSONEncoder().encode(preferences)
+                try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    let current: Data
+                    do { current = try Data(contentsOf: fileURL) }
+                    catch {
+                        state = .corrupt(error.localizedDescription)
+                        return false
+                    }
+                    if (try? JSONDecoder().decode(ClickMatePreferences.self, from: current)) != nil {
+                        if !preserveBackup { try current.write(to: backupURL, options: .atomic) }
+                    } else {
+                        guard allowCorruptOverwrite else {
+                            state = .corrupt(L10n.string("settingsData.corruptDescription"))
+                            return false
+                        }
+                        let name = fileURL.deletingPathExtension().lastPathComponent + ".corrupt-" + UUID().uuidString + ".json"
+                        let preserved = fileURL.deletingLastPathComponent().appendingPathComponent(name)
+                        try FileManager.default.copyItem(at: fileURL, to: preserved)
+                    }
+                }
+                try data.write(to: fileURL, options: .atomic)
+                state = successState
+                PreferencesChangeNotifier.post()
+                return true
+            } catch {
+                state = .saveFailure(error.localizedDescription)
+                return false
             }
-            try data.write(to: fileURL, options: .atomic)
-            PreferencesChangeNotifier.post()
+        }
+    }
+
+    private static func loadWithMigration(from fileURL: URL) -> (preferences: ClickMatePreferences, didMigrate: Bool, state: StorageState) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return (.defaults, false, .firstRun) }
+        do {
+            var preferences = try JSONDecoder().decode(ClickMatePreferences.self, from: Data(contentsOf: fileURL))
+            let menu = preferences.migrateMenuLayoutDefaultsIfNeeded()
+            let features = preferences.migrateQuickFeatureDefaultsIfNeeded()
+            let finder = preferences.migrateFinderMonitoringPolicyIfNeeded()
+            return (preferences, menu || features || finder, .loaded)
         } catch {
-            assertionFailure("Could not save ClickMate preferences: \(error.localizedDescription)")
+            return (.defaults, false, .corrupt(error.localizedDescription))
         }
-    }
-
-    private static func load(from fileURL: URL) -> ClickMatePreferences {
-        loadWithMigration(from: fileURL).preferences
-    }
-
-    private static func loadWithMigration(from fileURL: URL) -> (preferences: ClickMatePreferences, didMigrate: Bool) {
-        guard let data = try? Data(contentsOf: fileURL),
-              var preferences = try? JSONDecoder().decode(ClickMatePreferences.self, from: data)
-        else {
-            return (.defaults, false)
-        }
-        let didMigrateMenuLayout = preferences.migrateMenuLayoutDefaultsIfNeeded()
-        let didMigrateQuickFeatures = preferences.migrateQuickFeatureDefaultsIfNeeded()
-        let didMigrateFinderMonitoring = preferences.migrateFinderMonitoringPolicyIfNeeded()
-        let didMigrate = didMigrateMenuLayout || didMigrateQuickFeatures || didMigrateFinderMonitoring
-        return (preferences, didMigrate)
     }
 
     private static func migrateFallbackPreferencesIfNeeded(to fileURL: URL) {
-        guard !FileManager.default.fileExists(atPath: fileURL.path),
-              fileURL != fallbackPreferencesURL,
-              FileManager.default.fileExists(atPath: fallbackPreferencesURL.path)
-        else {
-            return
-        }
-
+        guard !FileManager.default.fileExists(atPath: fileURL.path), fileURL != fallbackPreferencesURL,
+              let data = try? Data(contentsOf: fallbackPreferencesURL),
+              (try? JSONDecoder().decode(ClickMatePreferences.self, from: data)) != nil else { return }
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: fallbackPreferencesURL, to: fileURL)
         } catch {
-            assertionFailure("Could not migrate ClickMate preferences: \(error.localizedDescription)")
+            // The normal first-run write reports a recoverable save failure if the target is unavailable.
         }
     }
 
@@ -563,11 +693,8 @@ final class PreferencesStore: ObservableObject {
     }
 
     private static var fallbackPreferencesURL: URL {
-        return FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first!
-            .appendingPathComponent("ClickMate", isDirectory: true)
-            .appendingPathComponent(Storage.filename)
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ClickMate", isDirectory: true).appendingPathComponent(Storage.filename)
     }
 }
 
@@ -1503,5 +1630,127 @@ struct SecurityScopedFolderAccess {
         } catch {
             return nil
         }
+    }
+}
+
+/// Versioned portable settings deliberately omit security bookmarks and machine/runtime state.
+struct PortableConfiguration: Codable, Equatable {
+    struct QuickFeature: Codable, Equatable {
+        var id: QuickFeatureID
+        var isEnabled: Bool
+        var shortcut: KeyboardShortcut
+    }
+    struct Screenshot: Codable, Equatable {
+        var copiesToClipboard: Bool
+        var savesToDesktop: Bool
+    }
+    enum ValidationError: LocalizedError {
+        case unsupportedVersion
+        case invalidValues
+        case invalidTemplate
+        case invalidShortcut
+        case invalidPath
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedVersion: L10n.string("settingsData.unsupportedVersion")
+            case .invalidValues: L10n.string("settingsData.invalidValues")
+            case .invalidTemplate: L10n.string("settingsData.invalidTemplate")
+            case .invalidShortcut: L10n.string("settingsData.invalidShortcut")
+            case .invalidPath: L10n.string("settingsData.invalidPath")
+            }
+        }
+    }
+
+    var version: Int
+    var enabledCommands: Set<MenuCommand>
+    var menuCommandOrder: [MenuCommand]
+    var foldedMenuGroups: Set<MenuCommandGroup>
+    var topLevelShortcutCommands: Set<MenuCommand>
+    var topLevelShortcutTemplateIDs: Set<String>
+    var removedMenuCommands: Set<MenuCommand>
+    var templates: [FileTemplate]
+    var monitoredFolderPaths: [String]
+    var detectedApplicationOrder: [String]
+    var removedDetectedApplicationBundleIDs: Set<String>
+    var pinnedApplicationPaths: [String]
+    var language: AppLanguage
+    var quickFeatureSettings: [QuickFeature]
+    var screenshotSettings: Screenshot
+    var archiveEditorCreatesBackup: Bool
+    var finderToolsEnabled: Bool
+
+    init(preferences: ClickMatePreferences) {
+        version = 1
+        enabledCommands = preferences.enabledCommands
+        menuCommandOrder = preferences.menuCommandOrder
+        foldedMenuGroups = preferences.foldedMenuGroups
+        topLevelShortcutCommands = preferences.topLevelShortcutCommands
+        topLevelShortcutTemplateIDs = preferences.topLevelShortcutTemplateIDs
+        removedMenuCommands = preferences.removedMenuCommands
+        templates = preferences.templates
+        monitoredFolderPaths = preferences.monitoredFolderPaths
+        detectedApplicationOrder = preferences.detectedApplicationOrder
+        removedDetectedApplicationBundleIDs = preferences.removedDetectedApplicationBundleIDs
+        pinnedApplicationPaths = preferences.pinnedApplicationPaths
+        language = preferences.language
+        quickFeatureSettings = preferences.quickFeatureSettings.map { QuickFeature(id: $0.id, isEnabled: $0.isEnabled, shortcut: $0.shortcut) }
+        screenshotSettings = Screenshot(copiesToClipboard: preferences.screenshotSettings.copiesToClipboard, savesToDesktop: preferences.screenshotSettings.savesToDesktop)
+        archiveEditorCreatesBackup = preferences.archiveEditorCreatesBackup
+        finderToolsEnabled = preferences.finderToolsEnabled
+    }
+
+    func validate() throws {
+        guard version == 1 else { throw ValidationError.unsupportedVersion }
+        guard Set(menuCommandOrder).count == menuCommandOrder.count,
+              enabledCommands.isDisjoint(with: removedMenuCommands),
+              topLevelShortcutCommands.isDisjoint(with: removedMenuCommands),
+              Set(detectedApplicationOrder).count == detectedApplicationOrder.count,
+              Set(detectedApplicationOrder).isSubset(of: Set(AppDetector.defaultApplicationOrder)),
+              removedDetectedApplicationBundleIDs.isSubset(of: Set(AppDetector.defaultApplicationOrder)) else {
+            throw ValidationError.invalidValues
+        }
+        let templateIDs = Set(templates.map(\.id))
+        guard templateIDs.count == templates.count,
+              templates.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.id.contains("\0") && $0.validationError == nil }),
+              topLevelShortcutTemplateIDs.isSubset(of: templateIDs) else { throw ValidationError.invalidTemplate }
+        guard Set(quickFeatureSettings.map(\.id)) == Set(QuickFeatureID.allCases),
+              quickFeatureSettings.count == QuickFeatureID.allCases.count,
+              quickFeatureSettings.allSatisfy({ $0.shortcut.isValid }) else { throw ValidationError.invalidShortcut }
+        let enabled = quickFeatureSettings.filter(\.isEnabled)
+        guard Set(enabled.map(\.shortcut)).count == enabled.count else { throw ValidationError.invalidShortcut }
+        guard Set(monitoredFolderPaths).count == monitoredFolderPaths.count,
+              Set(pinnedApplicationPaths).count == pinnedApplicationPaths.count,
+              monitoredFolderPaths.allSatisfy(Self.isValidAbsolutePath),
+              pinnedApplicationPaths.allSatisfy({ Self.isValidAbsolutePath($0) && ($0 as NSString).pathExtension.lowercased() == "app" }) else {
+            throw ValidationError.invalidPath
+        }
+    }
+
+    func applying(to current: ClickMatePreferences) -> ClickMatePreferences {
+        var updated = current
+        updated.enabledCommands = enabledCommands
+        updated.menuCommandOrder = ClickMatePreferences.normalizedMenuCommandOrder(menuCommandOrder)
+        updated.foldedMenuGroups = foldedMenuGroups
+        updated.topLevelShortcutCommands = topLevelShortcutCommands
+        updated.topLevelShortcutTemplateIDs = topLevelShortcutTemplateIDs
+        updated.removedMenuCommands = removedMenuCommands
+        updated.templates = templates
+        updated.monitoredFolderPaths = monitoredFolderPaths
+        let retainedPaths = Set(monitoredFolderPaths)
+        updated.monitoredFolderBookmarks = current.monitoredFolderBookmarks.filter { retainedPaths.contains($0.key) }
+        updated.detectedApplicationOrder = AppDetector.normalizedApplicationOrder(detectedApplicationOrder)
+        updated.removedDetectedApplicationBundleIDs = removedDetectedApplicationBundleIDs
+        updated.pinnedApplicationPaths = pinnedApplicationPaths
+        updated.language = language
+        updated.quickFeatureSettings = QuickFeatureSettings.normalized(quickFeatureSettings.map { QuickFeatureSettings(id: $0.id, isEnabled: $0.isEnabled, shortcut: $0.shortcut) })
+        updated.screenshotSettings = ScreenshotSettings(copiesToClipboard: screenshotSettings.copiesToClipboard, savesToDesktop: screenshotSettings.savesToDesktop)
+        updated.archiveEditorCreatesBackup = archiveEditorCreatesBackup
+        updated.finderToolsEnabled = finderToolsEnabled
+        return updated
+    }
+
+    private static func isValidAbsolutePath(_ path: String) -> Bool {
+        path.hasPrefix("/") && !path.contains("\0") && URL(fileURLWithPath: path).standardizedFileURL.path == path
     }
 }

@@ -7,7 +7,7 @@ import ServiceManagement
 @MainActor
 final class QuickFeatureHelperService: ObservableObject {
     static let shared = QuickFeatureHelperService()
-    static let helperBundleIdentifier = "com.zxacn.clickmate.Helper"
+    nonisolated static let helperBundleIdentifier = "com.zxacn.clickmate.Helper"
 
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "PermissionService")
 
@@ -42,6 +42,10 @@ final class QuickFeatureHelperService: ObservableObject {
     private let helperBundleURL: URL
     private let finderExtensionBundleURL: URL
     private let fullDiskAccessRecoveryStore: FullDiskAccessRecoveryStore
+    private let presentationSnapshotLoader: @Sendable () async -> QuickFeaturePresentationSnapshot
+    private let presentationRefreshDate: @MainActor () -> Date
+    private var presentationRefreshTask: Task<Void, Never>?
+    private var lastPresentationRefresh: Date?
     private var currentRuntimeSnapshot: QuickFeatureRuntimeSnapshot?
     private var runtimeSnapshotRefreshTask: Task<Void, Never>?
     private var runtimeStalenessTask: Task<Void, Never>?
@@ -67,30 +71,45 @@ final class QuickFeatureHelperService: ObservableObject {
         service: SMAppService = .loginItem(identifier: helperBundleIdentifier),
         mainBundleURL: URL = Bundle.main.bundleURL,
         fullDiskAccessRecoveryStore: FullDiskAccessRecoveryStore = FullDiskAccessRecoveryStore(),
-        isFinderRuntimeChannelAvailable: Bool = FinderExtensionRuntimeSnapshotStore.isAvailable
+        isFinderRuntimeChannelAvailable: Bool = FinderExtensionRuntimeSnapshotStore.isAvailable,
+        presentationSnapshotLoader: (@Sendable () async -> QuickFeaturePresentationSnapshot)? = nil,
+        presentationRefreshDate: @escaping @MainActor () -> Date = { .now }
     ) {
         self.service = service
         self.mainBundleURL = mainBundleURL.standardizedFileURL
         self.fullDiskAccessRecoveryStore = fullDiskAccessRecoveryStore
         self.isFinderRuntimeChannelAvailable = isFinderRuntimeChannelAvailable
+        self.presentationSnapshotLoader = presentationSnapshotLoader ?? {
+            await QuickFeaturePresentationSnapshot.load(
+                finderRuntimeChannelAvailable: isFinderRuntimeChannelAvailable
+            )
+        }
+        self.presentationRefreshDate = presentationRefreshDate
         helperBundleURL = mainBundleURL
             .appendingPathComponent("Contents/Library/LoginItems/ClickMateHelper.app", isDirectory: true)
             .standardizedFileURL
         finderExtensionBundleURL = mainBundleURL
             .appendingPathComponent("Contents/PlugIns/ClickMateFinderExtension.appex", isDirectory: true)
             .standardizedFileURL
-        registrationStatus = service.status
+        registrationStatus = presentationSnapshotLoader == nil ? service.status : .notRegistered
         mainDiskAccessStatus = .unknown
-        let resolvedLaunchMode = QuickFeatureCodeSignatureInspector.launchMode(
-            mainBundleURL: mainBundleURL,
-            helperBundleURL: helperBundleURL
-        )
+        let resolvedLaunchMode: QuickFeatureHelperLaunchMode
+        if presentationSnapshotLoader == nil {
+            resolvedLaunchMode = QuickFeatureCodeSignatureInspector.launchMode(
+                mainBundleURL: mainBundleURL,
+                helperBundleURL: helperBundleURL
+            )
+        } else {
+            resolvedLaunchMode = .directSession
+        }
         launchMode = resolvedLaunchMode
         hasStableInstalledIdentity = resolvedLaunchMode == .managedLoginItem
         runtimeSnapshot = nil
-        refreshSnapshot()
-        synchronizePermissionStates()
-        refreshDiskAccessStatuses()
+        if presentationSnapshotLoader == nil {
+            refreshSnapshot()
+            synchronizePermissionStates()
+            refreshDiskAccessStatuses()
+        }
     }
 
     var isRuntimeRunning: Bool {
@@ -143,6 +162,7 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     func stop() {
+        invalidatePresentationRefresh()
         guard isStarted else { return }
         runtimeStalenessTask?.cancel()
         runtimeStalenessTask = nil
@@ -179,6 +199,7 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     func synchronize(preferences: ClickMatePreferences) {
+        invalidatePresentationRefresh()
         guard QuickFeatureHelperConfigurationStore.write(preferences) else {
             lastError = L10n.string("permissions.backgroundServiceConfigurationFailed")
             return
@@ -273,12 +294,70 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     func refreshAllStatuses() {
+        invalidatePresentationRefresh()
         refreshRuntimeStatus()
         refreshDiskAccessStatuses()
         refreshFinderExtensionStatus()
         if let request = permissionRequestTracker.context {
             startPermissionPolling(requestID: request.id)
         }
+    }
+
+    /// Tab entry shows the last known state immediately and shares one background read.
+    @discardableResult
+    func refreshStatusesForPresentation() -> Task<Void, Never>? {
+        if let presentationRefreshTask { return presentationRefreshTask }
+        if let lastPresentationRefresh,
+           presentationRefreshDate().timeIntervalSince(lastPresentationRefresh) < 2 {
+            return nil
+        }
+        let load = presentationSnapshotLoader
+        let previousRuntimeUpdate = currentRuntimeSnapshot?.updatedAt
+        let previousFinderUpdate = finderExtensionRuntimeSnapshot?.updatedAt
+        let task = Task { [weak self] in
+            let snapshot = await load()
+            guard !Task.isCancelled, let self else { return }
+            defer { presentationRefreshTask = nil }
+            if registrationStatus != snapshot.registrationStatus {
+                registrationStatus = snapshot.registrationStatus
+            }
+            // An IPC notification may have delivered a newer heartbeat while loading.
+            if currentRuntimeSnapshot?.updatedAt == previousRuntimeUpdate {
+                applyRuntimeSnapshot(snapshot.runtimeSnapshot)
+                synchronizePermissionStates()
+            }
+            if finderExtensionRuntimeSnapshot?.updatedAt == previousFinderUpdate {
+                let finderSnapshot = snapshot.finderRuntimeSnapshot.flatMap { candidate in
+                    FinderExtensionRuntimeSnapshotPolicy.accepts(
+                        candidate,
+                        currentVersion: currentAppVersion,
+                        isExpectedRunningProcess: isExpectedFinderExtensionProcess
+                    ) ? candidate : nil
+                }
+                applyFinderDiskAccessSnapshot(finderSnapshot)
+            }
+            if finderExtensionStatus != snapshot.finderExtensionStatus {
+                finderExtensionStatus = snapshot.finderExtensionStatus
+            }
+            lastPresentationRefresh = presentationRefreshDate()
+            if let request = permissionRequestTracker.context {
+                startPermissionPolling(requestID: request.id)
+            } else if isRuntimeRunning {
+                startStandalonePermissionRefresh()
+            } else if shouldRun {
+                scheduleLifecycle { service in
+                    _ = await service.ensureHelperRunning()
+                }
+            }
+        }
+        presentationRefreshTask = task
+        return task
+    }
+
+    private func invalidatePresentationRefresh() {
+        presentationRefreshTask?.cancel()
+        presentationRefreshTask = nil
+        lastPresentationRefresh = nil
     }
 
     func reloadFinderExtension() {
@@ -329,6 +408,7 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     func refreshRuntimeStatus() {
+        invalidatePresentationRefresh()
         refreshSnapshot()
         if isRuntimeRunning, permissionRequestTracker.context == nil {
             startStandalonePermissionRefresh()
@@ -341,26 +421,32 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     private func refreshDiskAccessStatuses() {
-        mainDiskAccessStatus = .unknown
-        guard isFinderRuntimeChannelAvailable else {
-            finderExtensionRuntimeSnapshot = nil
-            finderDiskAccessStatus = .unknown
-            return
+        invalidatePresentationRefresh()
+        applyFinderDiskAccessSnapshot(currentFinderExtensionRuntimeSnapshot())
+    }
+
+    private func applyFinderDiskAccessSnapshot(_ snapshot: FinderExtensionRuntimeSnapshot?) {
+        if mainDiskAccessStatus != .unknown {
+            mainDiskAccessStatus = .unknown
         }
-        if let snapshot = currentFinderExtensionRuntimeSnapshot() {
+        let snapshot = isFinderRuntimeChannelAvailable ? snapshot : nil
+        if finderExtensionRuntimeSnapshot != snapshot {
             finderExtensionRuntimeSnapshot = snapshot
-            finderDiskAccessStatus = snapshot.diskAccessStatus
-            finderExtensionNeedsPolicyReload = false
-            finderExtensionPolicyMessage = nil
-        } else {
-            finderExtensionRuntimeSnapshot = nil
-            finderDiskAccessStatus = .unknown
+        }
+        let status = snapshot?.diskAccessStatus ?? .unknown
+        if finderDiskAccessStatus != status {
+            finderDiskAccessStatus = status
+        }
+        if snapshot != nil {
+            if finderExtensionNeedsPolicyReload { finderExtensionNeedsPolicyReload = false }
+            if finderExtensionPolicyMessage != nil { finderExtensionPolicyMessage = nil }
         }
     }
 
     private func startFinderExtensionPolicyReload(isAutomatic: Bool) {
         guard finderExtensionPolicyTask == nil, diskAccessRecoveryTask == nil else { return }
         guard finderExtensionPolicyRecoveryTracker.begin(isAutomatic: isAutomatic) else { return }
+        invalidatePresentationRefresh()
 
         let previousPID = finderExtensionRuntimeSnapshot?.pid
             ?? currentFinderExtensionProcessIdentifier()
@@ -653,6 +739,7 @@ final class QuickFeatureHelperService: ObservableObject {
     }
 
     private func refreshFinderExtensionStatus() {
+        invalidatePresentationRefresh()
         finderExtensionRefreshTask?.cancel()
         finderExtensionRefreshTask = Task { [weak self] in
             let status = await FinderExtensionPolicy.status()
@@ -668,6 +755,14 @@ final class QuickFeatureHelperService: ObservableObject {
 
     func endShortcutRecording(sessionID: UUID) {
         _ = enqueue(.endShortcutRecording(sessionID: sessionID))
+    }
+
+    /// An acknowledgement means the Helper received the test, not that capture succeeded.
+    func testScreenshot() async -> Bool {
+        guard permissionState(for: .screenRecording) == .granted,
+              let command = enqueue(.testScreenshot)
+        else { return false }
+        return await waitForCommandAcknowledgement(command.id, timeout: 3)
     }
 
     func restart() {
@@ -715,6 +810,7 @@ final class QuickFeatureHelperService: ObservableObject {
 
     private func requestPermission(_ kind: QuickFeaturePermissionKind) {
         guard let request = permissionRequestTracker.begin(kind: kind) else { return }
+        invalidatePresentationRefresh()
         permissionFailureMessages[kind] = nil
         setPermissionState(.checking, for: kind)
         logger.info("Permission request started kind=\(kind.rawValue, privacy: .public) request=\(request.id.uuidString, privacy: .public)")
@@ -1354,6 +1450,31 @@ final class QuickFeatureHelperService: ObservableObject {
 
     private var currentAppVersion: String {
         QuickFeatureHelperVersion.identifier(for: .main)
+    }
+}
+
+struct QuickFeaturePresentationSnapshot {
+    var registrationStatus: SMAppService.Status
+    var runtimeSnapshot: QuickFeatureRuntimeSnapshot?
+    var finderRuntimeSnapshot: FinderExtensionRuntimeSnapshot?
+    var finderExtensionStatus: FinderExtensionStatus
+
+    static func load(finderRuntimeChannelAvailable: Bool) async -> Self {
+        await Task.detached(priority: .utility) {
+            let registrationStatus = SMAppService.loginItem(
+                identifier: QuickFeatureHelperService.helperBundleIdentifier
+            ).status
+            let runtimeSnapshot = QuickFeatureRuntimeSnapshotStore.load()
+            let finderSnapshot = finderRuntimeChannelAvailable
+                ? FinderExtensionRuntimeSnapshotStore.load() : nil
+            let finderStatus = await FinderExtensionPolicy.status()
+            return Self(
+                registrationStatus: registrationStatus,
+                runtimeSnapshot: runtimeSnapshot,
+                finderRuntimeSnapshot: finderSnapshot,
+                finderExtensionStatus: finderStatus
+            )
+        }.value
     }
 }
 

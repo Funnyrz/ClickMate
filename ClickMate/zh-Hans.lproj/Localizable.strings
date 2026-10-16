@@ -38,8 +38,8 @@
 "archive.notTextDescription" = "ClickMate 仅支持编辑 UTF-8 文本文件。";
 "archive.selectTitle" = "选择一个文件";
 "archive.selectDescription" = "从压缩包中选择文本文件以查看或编辑。";
-"archive.unsavedTitle" = "要打开另一个压缩包吗？";
-"archive.unsavedMessage" = "当前文件存在尚未保存的修改。";
+"archive.unsavedTitle" = "要保存修改吗？";
+"archive.unsavedMessage" = "继续前，请保存或放弃当前修改。";
 "archive.saveAndOpen" = "保存并打开";
 "archive.discardAndOpen" = "放弃修改并打开";
 
@@ -300,3 +300,241 @@
 "permissions.fullDiskAccessManualVerificationStatus" = "通过文件操作验证";
 "permissions.fullDiskAccessManualVerificationDetail" = "当前构建无法自动验证完全磁盘访问；这不表示权限失败。实际访问能力会在你下一次主动执行文件操作时确认。";
 "quickFeatures.permissionFailed" = "权限请求失败";
+
+"tasks.title" = "文件任务";
+
+"tasks.archiveName" = "归档";
+
+"tasks.cancelled" = "任务已取消，已完成项目见下方结果。";
+
+"tasks.clearFinished" = "清除已完成";
+
+"tasks.empty" = "暂无文件任务";
+
+"tasks.cancel" = "取消";
+
+"tasks.reveal" = "在 Finder 中显示";
+
+"tasks.copySuccess" = "复制成功结果";
+
+"archive.discard" = "放弃修改";
+
+"compression.noFiles" = "请选择至少一个文件。";
+
+"compression.mixedDirectories" = "请选择同一文件夹中的项目。";
+
+"compression.invalidName" = "压缩包名称无效。";
+
+"compression.commandFailed" = "ZIP 操作失败（%d）：%@";
+
+"tasks.partial" = "部分文件未能完成，请查看下方结果。";
+
+"tasks.newFolder" = "新建文件夹";
+
+"tasks.restore" = "恢复原位置";
+
+"tasks.summary" = "%d 项成功 · %d 项失败";
+
+"tasks.stage.compressing" = "正在压缩…";
+
+"tasks.stage.validating" = "正在验证压缩包…";
+
+"tasks.stage.publishing" = "正在保存压缩包…";
+
+"batch.changedSinceMove" = "文件移动后已发生变化。";
+
+"batch.originalPathOccupied" = "原位置已存在其他项目。";
+
+"batch.sourceChangedDuringCopy" = "复制期间源项目发生了变化。";
+
+"batch.copiedButSourceRemains" = "副本已保留在 %@；移除源项目失败：%@";
+
+"batch.movedButRestoreUnavailable" = "已移动到 %@，但无法恢复：%@";
+
+"button.cancel" = "取消";
+
+"button.save" = "保存";
+
+"templates.noExtension" = "无扩展名";
+
+"templates.edit" = "编辑模板";
+
+"templates.duplicate" = "复制模板";
+
+"templates.newName" = "新模板";
+
+"templates.untitled" = "未命名";
+
+"templates.newTitle" = "新建文件模板";
+
+"templates.editTitle" = "编辑文件模板";
+
+"templates.displayName" = "模板名称";
+
+"templates.basename" = "默认文件名（不含扩展名）";
+
+"templates.extensionOptional" = "扩展名（可留空）";
+
+"templates.filenamePreview" = "文件名预览";
+
+"templates.contents" = "文件内容";
+
+"templates.validation.emptyDisplayName" = "请输入模板名称。";
+
+"templates.validation.emptyBasename" = "请输入默认文件名。";
+
+"templates.validation.invalidDisplayName" = "模板名称不能是 . 或 ..，也不能包含 /、:、换行或控制字符。";
+
+"templates.validation.invalidBasename" = "文件名不能是 . 或 ..，也不能包含 /、:、换行或控制字符。";
+
+"templates.validation.invalidExtension" = "扩展名不能仅含点号或空格，也不能包含 /、:、换行或控制字符；可留空。";
+
+"templates.targetNotDirectory" = "目标不是文件夹：%@";
+
+"guide.title" = "选择需要的功能";
+
+"guide.description" = "启用需要的功能，完成对应设置后试用。权限状态与试用结果分别显示。";
+
+"guide.diagnostics" = "完整权限与详细诊断";
+
+"guide.feature.finderTools" = "Finder 工具";
+
+"guide.feature.finderCut" = "访达剪切";
+
+"guide.feature.screenshot" = "截图";
+
+"guide.purpose.finderTools" = "新建文件及使用右键工具，需要 Finder 扩展和目标文件夹访问权限，无需屏幕录制权限。";
+
+"guide.purpose.finderCut" = "使用剪切快捷键和 ⌘V 移动文件，需要后台服务与辅助功能权限。";
+
+"guide.purpose.screenshot" = "选择截图区域并标注，需要后台服务与屏幕录制权限。";
+
+"guide.readiness.available" = "可用";
+
+"guide.readiness.needsPermission" = "待授权";
+
+"guide.readiness.restartRequired" = "需重启";
+
+"guide.readiness.failed" = "异常";
+
+"guide.disabled" = "未启用";
+
+"guide.configure" = "设置所需权限";
+
+"guide.try" = "试用";
+
+"guide.trial.notTested" = "尚未试用";
+
+"guide.trial.instructions" = "按提示试用";
+
+"guide.trial.awaitingConfirmation" = "等待确认结果";
+
+"guide.trial.passed" = "试用通过";
+
+"guide.trial.failed" = "试用未通过";
+
+"guide.trial.cancelled" = "已取消试用";
+
+"guide.chooseFolder" = "选择试用文件夹";
+
+"guide.finderInstructions" = "在“%@”中右键点击文件或空白区域，试用已启用的 ClickMate 菜单命令，再回到这里确认结果。";
+
+"guide.cutInstructions" = "本次仅使用临时测试文件 ClickMate-Test.txt。在 Finder 中选中它后按 %@，点击下方按钮打开 Destination，再按 ⌘V，然后回到这里确认结果。不会操作现有文件。";
+
+"guide.openDestination" = "打开测试目标文件夹";
+
+"guide.cutNotMoved" = "未在 Destination 中找到测试文件，或源文件仍然存在。请使用临时测试文件重新试用。";
+
+"guide.screenshotInstructions" = "后台服务将打开区域截图。选择区域并完成截图后，回到这里确认实际结果。按 Esc 可取消，然后选择“已取消”。";
+
+"guide.screenshotUnavailable" = "后台服务未确认收到试用请求。请检查后台服务与屏幕录制权限后重试。";
+
+"guide.shortcutFailure" = "请在快捷功能中检查快捷键：它可能存在冲突或注册失败。";
+
+"guide.confirmPassed" = "已成功";
+
+"guide.confirmFailed" = "未成功";
+
+"guide.confirmCancelled" = "已取消";
+
+"settingsData.applicationCount" = "置顶应用";
+
+"settingsData.cancel" = "取消";
+
+"settingsData.chooseImport" = "选择设置文件…";
+
+"settingsData.close" = "关闭";
+
+"settingsData.confirmImportDescription" = "使用此文件替换全部可迁移设置？当前设置将先备份。系统授权和本机服务设置会保留。";
+
+"settingsData.confirmImportTitle" = "替换设置？";
+
+"settingsData.confirmResetDescription" = "恢复全部默认设置？有效的当前配置会先备份，损坏的原始文件会单独保留。";
+
+"settingsData.confirmRestoreDescription" = "使用最近一次有效备份替换当前设置？损坏的原始文件会单独保留。";
+
+"settingsData.corrupt" = "设置需要恢复";
+
+"settingsData.corruptDescription" = "无法解析设置文件。请恢复备份或明确重置后再保存修改。";
+
+"settingsData.description" = "备份偏好设置、在 Mac 之间迁移设置，或恢复损坏的配置。";
+
+"settingsData.export" = "导出设置…";
+
+"settingsData.exported" = "设置已成功导出。";
+
+"settingsData.failed" = "设置操作失败";
+
+"settingsData.firstRun" = "默认设置已保存";
+
+"settingsData.folderCount" = "文件夹";
+
+"settingsData.hotkeyCount" = "已启用的快捷功能";
+
+"settingsData.invalidPath" = "文件包含无效的文件夹或应用路径。请使用绝对路径，应用路径必须以 .app 结尾。";
+
+"settingsData.invalidShortcut" = "文件包含无效或冲突的键盘快捷键。";
+
+"settingsData.invalidTemplate" = "文件包含无效模板，或引用了不存在的模板。";
+
+"settingsData.invalidValues" = "文件包含不一致的菜单或应用设置。";
+
+"settingsData.loaded" = "设置已保存";
+
+"settingsData.manage" = "设置数据";
+
+"settingsData.menuCount" = "已启用的命令";
+
+"settingsData.previewDescription" = "当前 → 导入。导入将替换菜单、模板、快捷功能、截图、语言及应用和文件夹路径。";
+
+"settingsData.previewTitle" = "导入预览：%@";
+
+"settingsData.readOnly" = "此设置存储为只读。";
+
+"settingsData.reauthorizeDescription" = "%d 个导入文件夹需要在本机重新授权。系统权限不会迁移。";
+
+"settingsData.recoveryDescription" = "每次保存前都会备份最近一次有效配置。重置或恢复时会保留损坏的原始文件。";
+
+"settingsData.recoveryRequired" = "请先恢复备份或明确重置损坏的设置，再导入、导出或保存修改。";
+
+"settingsData.replace" = "替换设置";
+
+"settingsData.reset" = "恢复默认设置…";
+
+"settingsData.restoreBackup" = "恢复备份…";
+
+"settingsData.retry" = "重试保存";
+
+"settingsData.saveFailed" = "无法保存设置";
+
+"settingsData.templateCount" = "模板";
+
+"settingsData.title" = "设置数据";
+
+"settingsData.transferDescription" = "导出包含菜单设置、模板、快捷键、截图、语言和路径。安全书签、系统授权及本机服务状态会留在此 Mac 上。";
+
+"settingsData.transferTitle" = "导入与导出";
+
+"settingsData.unsupportedVersion" = "此设置文件使用了不支持的格式版本。";
+
+"guide.trialFilesRetained" = "您添加或修改的文件已保留在 %@。";

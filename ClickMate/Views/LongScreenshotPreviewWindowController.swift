@@ -3,6 +3,9 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class LongScreenshotPreviewWindowController: NSObject, NSWindowDelegate {
+    #if DEBUG
+    var documentationWindow: NSWindow? { previewWindow }
+    #endif
     private let model: ScreenshotSessionModel
     private let defaultFileName: () -> String
     private let copyImage: (CGImage) throws -> Void

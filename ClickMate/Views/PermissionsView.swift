@@ -3,8 +3,16 @@ import SwiftUI
 
 struct PermissionsView: View {
     @EnvironmentObject private var store: PreferencesStore
-    @ObservedObject private var helperService = QuickFeatureHelperService.shared
+    @ObservedObject private var helperService: QuickFeatureHelperService
     @State private var statusMessage = L10n.string("permissions.extensionStatusUnknown")
+    @State private var trials: [FeatureGuideFeature: FeatureTrialState] = [:]
+    @State private var trialDetails: [FeatureGuideFeature: String] = [:]
+    @State private var cutTrial: FeatureTrialFiles?
+    @State private var screenshotTrialStarting = false
+
+    init(helperService: QuickFeatureHelperService = .shared) {
+        self.helperService = helperService
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,6 +30,20 @@ struct PermissionsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    FeaturePermissionGuideView(
+                        readiness: Dictionary(uniqueKeysWithValues: FeatureGuideFeature.allCases.map { ($0, readinessSnapshot.status(for: $0)) }),
+                        selectedFeatures: FeatureGuideFeature.selectedFeatures(in: store.preferences),
+                        trials: trials,
+                        trialDetails: trialDetails,
+                        trialAllowedFeatures: allowedTrials,
+                        onSelect: selectFeature,
+                        onConfigure: configureFeature,
+                        onTrial: startTrial,
+                        onTrialResult: recordTrialResult,
+                        onOpenTrialDestination: openCutTrialDestination
+                    )
+                    DisclosureGroup(L10n.string("guide.diagnostics")) {
+                    VStack(alignment: .leading, spacing: 12) {
                     permissionStep(
                         number: 1,
                         titleKey: "permissions.stepInstallTitle",
@@ -285,12 +307,168 @@ struct PermissionsView: View {
                     Text(L10n.string("permissions.footer"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 8)
+                    }
                 }
             }
         }
         .task {
-            refreshPermissionStatuses()
+            guard !store.storageState.isCorrupt else { return }
+            helperService.refreshStatusesForPresentation()
         }
+        .onDisappear {
+            if cutTrial != nil { trials[.finderCut] = .cancelled }
+            cleanUpCutTrial()
+        }
+    }
+
+    private var readinessSnapshot: FeatureReadinessSnapshot {
+        FeatureReadinessSnapshot(
+            finderStatus: helperService.finderExtensionStatus,
+            finderNeedsRestart: helperService.finderExtensionNeedsPolicyReload || helperService.diskAccessNeedsRelaunch,
+            finderAccess: helperService.finderExtensionRuntimeSnapshot?.lastAccessResult,
+            backgroundServiceEnabled: store.preferences.backgroundServiceEnabled,
+            helperRunning: helperService.isRuntimeRunning,
+            helperFailed: helperService.lastError != nil,
+            accessibility: helperService.permissionState(for: .accessibility),
+            screenRecording: helperService.permissionState(for: .screenRecording),
+            activeFeatures: helperService.runtimeSnapshot?.activeFeatures ?? [],
+            failedFeatures: helperService.failedFeatureIDs.union(store.preferences.conflictingQuickFeatureIDs())
+        )
+    }
+
+    private var allowedTrials: Set<FeatureGuideFeature> {
+        Set(FeatureGuideFeature.allCases.filter {
+            $0 == .finderTools || (readinessSnapshot.status(for: $0) == .available && !($0 == .screenshot && screenshotTrialStarting))
+        })
+    }
+
+    private func selectFeature(_ feature: FeatureGuideFeature, enabled: Bool) {
+        if feature == .finderTools {
+            store.preferences.finderToolsEnabled = enabled
+        } else if let id = feature.quickFeatureID,
+                  let index = store.preferences.quickFeatureSettings.firstIndex(where: { $0.id == id }) {
+            store.preferences.quickFeatureSettings[index].isEnabled = enabled
+            if enabled { store.preferences.backgroundServiceEnabled = true }
+            store.waitForPendingSaves()
+            helperService.synchronize(preferences: store.preferences)
+        }
+        trials[feature] = .notTested
+        trialDetails[feature] = nil
+        if feature == .finderCut { cleanUpCutTrial() }
+    }
+
+    private func configureFeature(_ feature: FeatureGuideFeature) {
+        switch feature {
+        case .finderTools:
+            if helperService.finderExtensionNeedsPolicyReload {
+                reloadFinderExtension()
+            } else if helperService.diskAccessNeedsRelaunch {
+                helperService.applyFullDiskAccessChanges()
+            } else if helperService.finderExtensionRuntimeSnapshot?.lastAccessResult == .permissionDenied {
+                helperService.openFullDiskAccessSettings()
+            } else {
+                openExtensionsSettings()
+            }
+        case .finderCut, .screenshot:
+            if !helperService.isRuntimeRunning {
+                helperService.repair()
+                return
+            }
+            let kind: QuickFeaturePermissionKind = feature == .finderCut ? .accessibility : .screenRecording
+            switch helperService.permissionState(for: kind) {
+            case .restartRequired:
+                helperService.restart()
+            case .granted:
+                if let id = feature.quickFeatureID,
+                   helperService.failedFeatureIDs.contains(id) || store.preferences.conflictingQuickFeatureIDs().contains(id) {
+                    statusMessage = L10n.string("guide.shortcutFailure")
+                } else {
+                    helperService.restart()
+                }
+            default:
+                if kind == .accessibility { helperService.requestAccessibilityAccess() }
+                else { helperService.requestScreenRecordingAccess() }
+            }
+        }
+    }
+
+    private func startTrial(_ feature: FeatureGuideFeature) {
+        trialDetails[feature] = nil
+        switch feature {
+        case .finderTools:
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = false
+            panel.prompt = L10n.string("guide.chooseFolder")
+            guard panel.runModal() == .OK, let url = panel.url else {
+                trials[feature] = .cancelled
+                return
+            }
+            let accepted = MonitoredFolderPolicy.acceptedAndRejectedPaths(from: [url]).accepted
+            guard let path = accepted.first else {
+                trials[feature] = .failed
+                trialDetails[feature] = L10n.string("permissions.blockedFolder")
+                return
+            }
+            store.preferences.monitoredFolderPaths = appendUniquePaths([path], to: store.preferences.monitoredFolderPaths)
+            if let bookmark = try? SecurityScopedFolderAccess.bookmarkData(for: url) {
+                store.preferences.monitoredFolderBookmarks[path] = bookmark
+            }
+            store.waitForPendingSaves()
+            trials[feature] = NSWorkspace.shared.open(url) ? .instructions : .failed
+            trialDetails[feature] = L10n.string("guide.finderInstructions", url.lastPathComponent)
+        case .finderCut:
+            cleanUpCutTrial()
+            do {
+                let files = try FeatureTrialFiles.create()
+                cutTrial = files
+                trials[feature] = .instructions
+                trialDetails[feature] = L10n.string("guide.cutInstructions", store.preferences.quickFeatureSettings(for: .finderCut).shortcut.displayString)
+                NSWorkspace.shared.activateFileViewerSelecting([files.sourceURL])
+            } catch {
+                trials[feature] = .failed
+                trialDetails[feature] = error.localizedDescription
+            }
+        case .screenshot:
+            screenshotTrialStarting = true
+            trials[feature] = .instructions
+            trialDetails[feature] = L10n.string("guide.screenshotInstructions")
+            Task {
+                let received = await helperService.testScreenshot()
+                screenshotTrialStarting = false
+                trials[feature] = received ? .awaitingConfirmation : .failed
+                if !received { trialDetails[feature] = L10n.string("guide.screenshotUnavailable") }
+            }
+        }
+    }
+
+    private func openCutTrialDestination() {
+        guard let trial = cutTrial else { return }
+        NSWorkspace.shared.open(trial.destinationDirectory)
+        trials[.finderCut] = .awaitingConfirmation
+    }
+
+    private func recordTrialResult(_ feature: FeatureGuideFeature, result: FeatureTrialState) {
+        if result == .passed, feature == .finderCut, cutTrial?.hasCompletedMove != true {
+            trials[feature] = .failed
+            trialDetails[feature] = L10n.string("guide.cutNotMoved")
+            return
+        }
+        trials[feature] = result
+        if feature == .finderCut { cleanUpCutTrial() }
+    }
+
+    private func cleanUpCutTrial() {
+        if let retained = cutTrial?.cleanup() {
+            let message = L10n.string("guide.trialFilesRetained", retained.path)
+            trialDetails[.finderCut] = message
+            statusMessage = message
+            HUDPresenter.shared.show(message: message, duration: 5)
+        }
+        cutTrial = nil
     }
 
     private var header: some View {
@@ -642,6 +820,92 @@ struct PermissionsView: View {
             return L10n.string("permissions.fullDiskAccessLastOperationFailed")
         case nil:
             return L10n.string("permissions.fullDiskAccessExtensionRunning")
+        }
+    }
+}
+
+/// A side-effect-free guide surface; runtime actions are supplied by PermissionsView.
+struct FeaturePermissionGuideView: View {
+    var readiness: [FeatureGuideFeature: FeatureReadiness] = [:]
+    var selectedFeatures: Set<FeatureGuideFeature> = []
+    var trials: [FeatureGuideFeature: FeatureTrialState] = [:]
+    var trialDetails: [FeatureGuideFeature: String] = [:]
+    var trialAllowedFeatures: Set<FeatureGuideFeature> = [.finderTools]
+    var onSelect: (FeatureGuideFeature, Bool) -> Void = { _, _ in }
+    var onConfigure: (FeatureGuideFeature) -> Void = { _ in }
+    var onTrial: (FeatureGuideFeature) -> Void = { _ in }
+    var onTrialResult: (FeatureGuideFeature, FeatureTrialState) -> Void = { _, _ in }
+    var onOpenTrialDestination: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L10n.string("guide.title")).font(.title3.bold())
+            Text(L10n.string("guide.description"))
+                .font(.callout).foregroundStyle(.secondary)
+            ForEach(FeatureGuideFeature.allCases) { feature in
+                featureCard(feature)
+            }
+        }
+    }
+
+    private func featureCard(_ feature: FeatureGuideFeature) -> some View {
+        let selected = selectedFeatures.contains(feature)
+        let status = readiness[feature] ?? .needsPermission
+        let trial = trials[feature] ?? .notTested
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 12) {
+                Toggle(isOn: Binding(get: { selected }, set: { onSelect(feature, $0) })) {
+                    Label(L10n.string("guide.feature.\(feature.rawValue)"), systemImage: symbol(for: feature))
+                        .font(.headline)
+                }
+                .toggleStyle(.checkbox)
+                .accessibilityIdentifier("guide-feature-\(feature.rawValue)")
+                Spacer()
+                Label(L10n.string(selected ? "guide.readiness.\(status.rawValue)" : "guide.disabled"), systemImage: selected && status == .available ? "checkmark.circle.fill" : "circle")
+                    .font(.caption)
+                    .foregroundStyle(selected && status == .available ? Color.green : Color.secondary)
+            }
+            Text(L10n.string("guide.purpose.\(feature.rawValue)"))
+                .font(.callout).foregroundStyle(.secondary)
+            if selected {
+                HStack(spacing: 10) {
+                    if status != .available {
+                        Button(L10n.string("guide.configure")) { onConfigure(feature) }
+                    }
+                    Button(L10n.string("guide.try")) { onTrial(feature) }
+                        .disabled(!trialAllowedFeatures.contains(feature))
+                    Text(L10n.string("guide.trial.\(trial.rawValue)"))
+                        .font(.caption)
+                        .foregroundStyle(trial == .passed ? Color.green : Color.secondary)
+                    Spacer()
+                }
+                if let detail = trialDetails[feature] {
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                }
+                if trial == .instructions || trial == .awaitingConfirmation {
+                    if feature == .finderCut {
+                        Button(L10n.string("guide.openDestination"), action: onOpenTrialDestination)
+                    }
+                    if trial == .awaitingConfirmation || feature != .screenshot {
+                        HStack {
+                            Button(L10n.string("guide.confirmPassed")) { onTrialResult(feature, .passed) }
+                            Button(L10n.string("guide.confirmFailed")) { onTrialResult(feature, .failed) }
+                            Button(L10n.string("guide.confirmCancelled")) { onTrialResult(feature, .cancelled) }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func symbol(for feature: FeatureGuideFeature) -> String {
+        switch feature {
+        case .finderTools: "cursorarrow.click"
+        case .finderCut: "scissors"
+        case .screenshot: "camera.viewfinder"
         }
     }
 }

@@ -3,8 +3,12 @@ import SwiftUI
 
 struct QuickFeaturesView: View {
     @EnvironmentObject private var store: PreferencesStore
-    @ObservedObject private var helperService = QuickFeatureHelperService.shared
+    @ObservedObject private var helperService: QuickFeatureHelperService
     @State private var validationMessages: [QuickFeatureID: String] = [:]
+
+    init(helperService: QuickFeatureHelperService = .shared) {
+        self.helperService = helperService
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -33,7 +37,8 @@ struct QuickFeaturesView: View {
             }
         }
         .onAppear {
-            refreshPermissions()
+            guard !store.storageState.isCorrupt else { return }
+            helperService.refreshStatusesForPresentation()
         }
     }
 
@@ -257,9 +262,6 @@ struct QuickFeaturesView: View {
         }
     }
 
-    private func refreshPermissions() {
-        helperService.refreshAllStatuses()
-    }
 }
 
 private extension QuickFeatureID {

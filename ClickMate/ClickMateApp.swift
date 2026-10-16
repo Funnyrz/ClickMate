@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct ClickMateApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var store = PreferencesStore()
+    @StateObject private var store = AppPreferences.store
     @StateObject private var updateCoordinator = UpdateCheckCoordinator()
 
     var body: some Scene {
@@ -37,9 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        L10n.languageProvider = {
-            PreferencesStore.currentLanguagePreference()
-        }
+        _ = AppPreferences.store
         observePendingCommands()
         URLRouter.processPendingCommands()
         quickFeatureHelperService.start()
@@ -47,6 +45,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         quickFeatureHelperService.stop()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        DispatchQueue.main.async {
+            ArchiveEditorWindowController.shared.requestTermination { shouldTerminate in
+                if shouldTerminate {
+                    FileTaskCenter.shared.cancelAndWait {
+                        sender.reply(toApplicationShouldTerminate: true)
+                    }
+                } else {
+                    sender.reply(toApplicationShouldTerminate: false)
+                }
+            }
+        }
+        return .terminateLater
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -102,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
-            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+            AppWindows.settingsWindow?.makeKeyAndOrderFront(nil)
         }
     }
 

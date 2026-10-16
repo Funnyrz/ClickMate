@@ -79,14 +79,39 @@ class FinderSync: FIFinderSync {
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderSync")
     private let menuIconSize = NSSize(width: 16, height: 16)
     private lazy var store = PreferencesStore(allowsWrites: false)
-    private var latestMenuContext: FinderContext?
     private var menuActionTokens: [Int: FinderCommandToken] = [:]
     private var menuActionTitleTokens: [String: FinderCommandToken] = [:]
     private var menuImageCache: [String: NSImage] = [:]
     private var pendingApplicationIconCacheKeys: Set<String> = []
     private var nextMenuActionTag = 1
-    private let runtimeReporter = FinderExtensionRuntimeReporter()
-    private let sharedContainerAvailable = ApplicationGroupAccessPolicy.sharedContainerURL() != nil
+    private lazy var runtimeReporter = FinderExtensionRuntimeReporter()
+    private lazy var sharedContainerAvailable = ApplicationGroupAccessPolicy.sharedContainerURL() != nil
+
+#if DEBUG
+    private var documentationAppearance: MenuIconAppearance?
+
+    /// Native documentation fixtures use an isolated, read-only store and never
+    /// install Finder observers or publish extension runtime state.
+    init(documentationStore: PreferencesStore) {
+        super.init()
+        store = documentationStore
+        documentationAppearance = .light
+        // Use the same SF Symbol fallbacks as a freshly opened production menu,
+        // without scheduling lookups of applications installed on this Mac.
+        for command in store.preferences.enabledOpenApplicationCommandsInCustomOrder {
+            if let identifier = command.applicationBundleIdentifier {
+                menuImageCache["bundle:\(identifier)"] = menuSymbolImage(command.symbolName)
+            }
+        }
+        for path in store.preferences.pinnedApplicationPaths {
+            menuImageCache["path:\(path)"] = groupIcon(.openPinned)
+        }
+    }
+
+    func documentationMenu(context: FinderMenuContext) -> NSMenu {
+        configuredMenu(context: context)
+    }
+#endif
 
     override init() {
         super.init()
@@ -147,8 +172,11 @@ class FinderSync: FIFinderSync {
         applyPinnedApplicationFallback()
         let selectedURLs = FIFinderSyncController.default().selectedItemURLs() ?? []
         let targetedURL = FIFinderSyncController.default().targetedURL()
-        let context = FinderContext(selectedURLs: selectedURLs, targetedURL: targetedURL)
-        latestMenuContext = context
+        let context = FinderContext(kind: contextKind(for: menuKind), selectedURLs: selectedURLs, targetedURL: targetedURL)
+        return configuredMenu(context: context)
+    }
+
+    private func configuredMenu(context: FinderContext) -> NSMenu {
         menuActionTokens.removeAll(keepingCapacity: true)
         menuActionTitleTokens.removeAll(keepingCapacity: true)
         nextMenuActionTag = 1
@@ -282,6 +310,7 @@ class FinderSync: FIFinderSync {
     }
 
     private func appendConfiguredMenuGroups(to menu: NSMenu, context: FinderContext) {
+        guard store.preferences.finderToolsEnabled else { return }
         let placement = store.preferences.menuGroupPlacement
         let allGroups = store.preferences.orderedVisibleMenuGroups
         var didAddFoldedParent = false
@@ -408,7 +437,7 @@ class FinderSync: FIFinderSync {
             title: title,
             token: .pinnedApplication(path),
             context: context,
-            isEnabled: !context.actionURLs.isEmpty,
+            isEnabled: context.destinationDirectory != nil,
             image: applicationIcon(atPath: path) ?? groupIcon(.openPinned)
         )
     }
@@ -418,7 +447,7 @@ class FinderSync: FIFinderSync {
         item.target = self
         item.isEnabled = isEnabled
         item.image = image
-        item.representedObject = token.rawValue
+        item.representedObject = FinderMenuAction(token: token, context: context)
         item.tag = nextMenuActionTag
         menuActionTokens[item.tag] = token
         menuActionTitleTokens[title] = token
@@ -492,6 +521,9 @@ class FinderSync: FIFinderSync {
     }
 
     private func currentMenuIconAppearance() -> MenuIconAppearance {
+#if DEBUG
+        if let documentationAppearance { return documentationAppearance }
+#endif
         if UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" {
             return .dark
         }
@@ -588,13 +620,15 @@ class FinderSync: FIFinderSync {
         case .editArchive:
             return archiveEditorURL(in: context) != nil
         case .sha256, .sha1, .md5, .copyPOSIXPath, .copyFileURL, .copyShellPath, .copyFilename, .copyBasename, .copyExtension, .copyParentPath, .revealParent, .duplicateTimestamp, .createAlias, .moveToNewFolder, .compress, .metadata, .imageDimensions, .openVSCode, .openCursor, .openBBEdit, .openSublime:
-            return !context.actionURLs.isEmpty
+            return !context.urls(for: command).isEmpty
         case .newFile:
             return context.destinationDirectory != nil
         }
     }
 
     @objc private func handleMenuAction(_ sender: NSMenuItem) {
+        store.reload()
+        guard store.preferences.finderToolsEnabled else { return }
         guard let token = token(for: sender)
         else {
             logger.error("Menu action missing token for item \(sender.title, privacy: .public), tag=\(sender.tag, privacy: .public)")
@@ -602,7 +636,19 @@ class FinderSync: FIFinderSync {
             return
         }
 
-        let context = latestMenuContext ?? currentContext()
+        guard let action = sender.representedObject as? FinderMenuAction else {
+            notifyFailure("notification.actionFailed")
+            return
+        }
+        let context = action.context
+        let controller = FIFinderSyncController.default()
+        guard context.isValidForExecution(
+            currentSelectedURLs: controller.selectedItemURLs() ?? [],
+            currentTargetedURL: controller.targetedURL()
+        ) else {
+            notifyFailure("notification.noSelection")
+            return
+        }
         logger.info(
             "Handling menu action \(token.rawValue, privacy: .public), selected=\(context.selectedURLs.count, privacy: .public), hasTarget=\(context.targetedURL != nil, privacy: .public)"
         )
@@ -618,7 +664,8 @@ class FinderSync: FIFinderSync {
     }
 
     private func token(for item: NSMenuItem) -> FinderCommandToken? {
-        menuActionTokens[item.tag]
+        (item.representedObject as? FinderMenuAction)?.token
+            ?? menuActionTokens[item.tag]
             ?? ((item.representedObject as? String).flatMap(FinderCommandToken.init(rawValue:)))
             ?? menuActionTitleTokens[item.title]
             ?? tokenFromVisibleTitle(item.title)
@@ -663,11 +710,14 @@ class FinderSync: FIFinderSync {
         return String(localized[..<range.lowerBound])
     }
 
-    private func currentContext() -> FinderContext {
-        FinderContext(
-            selectedURLs: FIFinderSyncController.default().selectedItemURLs() ?? [],
-            targetedURL: FIFinderSyncController.default().targetedURL()
-        )
+    private func contextKind(for menuKind: FIMenuKind) -> FinderMenuContext.Kind {
+        switch menuKind {
+        case .contextualMenuForItems: return .items
+        case .contextualMenuForContainer: return .container
+        case .contextualMenuForSidebar: return .sidebar
+        case .toolbarItemMenu: return .toolbar
+        @unknown default: return .unknown
+        }
     }
 
     private func createFile(templateID: String, context: FinderContext) {
@@ -687,8 +737,9 @@ class FinderSync: FIFinderSync {
     private func run(command: MenuCommand, context: FinderContext) {
         switch command {
         case .copyPOSIXPath, .copyFileURL, .copyShellPath, .copyFilename, .copyBasename, .copyExtension, .copyParentPath:
-            guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            FileActions.writeToPasteboard(PathFormatter.format(context.actionURLs, as: command))
+            let urls = context.urls(for: command)
+            guard !urls.isEmpty else { return notifyFailure("notification.noSelection") }
+            FileActions.writeToPasteboard(PathFormatter.format(urls, as: command))
                 ? notifySuccess("notification.copied")
                 : notifyFailure("notification.actionFailed")
         case .openTerminal:
@@ -713,50 +764,22 @@ class FinderSync: FIFinderSync {
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
             FileActions.revealParent(urls: context.actionURLs)
             notifySuccess("notification.completed")
-        case .duplicateTimestamp:
+        case .duplicateTimestamp, .createAlias, .moveToNewFolder:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            do {
-                try FileActions.duplicateWithTimestamp(urls: context.actionURLs)
-                recordUserInitiatedAccess(.success)
-                notifySuccess("notification.completed")
-            } catch {
-                let result = accessResult(for: error)
-                recordUserInitiatedAccess(result)
-                logFileActionFailure("duplicate", result: result, error: error)
-                notifyFailure("notification.actionFailed")
-            }
-        case .createAlias:
-            guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            do {
-                try FileActions.createAliases(urls: context.actionURLs)
-                recordUserInitiatedAccess(.success)
-                notifySuccess("notification.completed")
-            } catch {
-                let result = accessResult(for: error)
-                recordUserInitiatedAccess(result)
-                logFileActionFailure("createAlias", result: result, error: error)
-                notifyFailure("notification.actionFailed")
-            }
-        case .moveToNewFolder:
-            guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            do {
-                try FileActions.moveToNewFolder(urls: context.actionURLs)
-                recordUserInitiatedAccess(.success)
-                notifySuccess("notification.completed")
-            } catch {
-                let result = accessResult(for: error)
-                recordUserInitiatedAccess(result)
-                logFileActionFailure("moveToNewFolder", result: result, error: error)
+            if !dispatchToContainingApp(
+                command: .batchFileAction(command: command, urls: context.actionURLs),
+                fallbackRoute: .batchFileAction(command: command, urls: context.actionURLs)
+            ) {
                 notifyFailure("notification.actionFailed")
             }
         case .compress:
             guard !context.actionURLs.isEmpty else { return notifyFailure("notification.noSelection") }
-            dispatchToContainingApp(
+            if !dispatchToContainingApp(
                 command: .compress(urls: context.actionURLs),
                 fallbackRoute: .compress(urls: context.actionURLs)
-            )
-                ? notifySuccess("notification.completed")
-                : notifyFailure("notification.actionFailed")
+            ) {
+                notifyFailure("notification.actionFailed")
+            }
         case .editArchive:
             guard let archiveURL = archiveEditorURL(in: context) else {
                 return notifyFailure("notification.noSelection")
@@ -894,25 +917,26 @@ class FinderSync: FIFinderSync {
         return AppLauncher.openContainingApp(
             action: "processPendingCommands",
             urls: [],
-            activates: false
+            activates: fallbackRoute.requiresVisibleWindow
         )
     }
 
     private func openApplication(command: MenuCommand, context: FinderContext) {
-        guard !context.actionURLs.isEmpty else {
+        let urls = context.urls(for: command)
+        guard !urls.isEmpty else {
             notifyFailure("notification.noSelection")
             return
         }
         guard sharedContainerAvailable else {
             if !AppLauncher.requestContainingAppToOpenApplication(
                 command: command,
-                urls: context.actionURLs
+                urls: urls
             ) {
                 notifyFailure("notification.openFailed")
             }
             return
         }
-        PendingCommandQueue.enqueue(.openApplication(command: command, urls: context.actionURLs))
+        PendingCommandQueue.enqueue(.openApplication(command: command, urls: urls))
         let opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
         if !opened {
             notifyFailure("notification.openFailed")
@@ -920,20 +944,21 @@ class FinderSync: FIFinderSync {
     }
 
     private func openPinnedApplication(path: String, context: FinderContext) {
-        guard !context.actionURLs.isEmpty else {
+        let urls = context.actionURLs.isEmpty ? context.destinationDirectory.map { [$0] } ?? [] : context.actionURLs
+        guard !urls.isEmpty else {
             notifyFailure("notification.noSelection")
             return
         }
         guard sharedContainerAvailable else {
             if !AppLauncher.requestContainingAppToOpenPinnedApplication(
                 path: path,
-                urls: context.actionURLs
+                urls: urls
             ) {
                 notifyFailure("notification.openFailed")
             }
             return
         }
-        PendingCommandQueue.enqueue(.openPinnedApplication(path: path, urls: context.actionURLs))
+        PendingCommandQueue.enqueue(.openPinnedApplication(path: path, urls: urls))
         let opened = AppLauncher.openContainingApp(action: "processPendingCommands", urls: [], activates: false)
         if !opened {
             notifyFailure("notification.openFailed")
@@ -949,19 +974,15 @@ class FinderSync: FIFinderSync {
     }
 }
 
-private struct FinderContext {
-    let selectedURLs: [URL]
-    let targetedURL: URL?
+private typealias FinderContext = FinderMenuContext
 
-    var destinationDirectory: URL? {
-        FileActions.destinationDirectory(selectedURLs: selectedURLs, targetedURL: targetedURL)
-    }
+private final class FinderMenuAction: NSObject {
+    let token: FinderCommandToken
+    let context: FinderContext
 
-    var actionURLs: [URL] {
-        if selectedURLs.isEmpty, let targetedURL {
-            return [targetedURL]
-        }
-        return selectedURLs
+    init(token: FinderCommandToken, context: FinderContext) {
+        self.token = token
+        self.context = context
     }
 }
 

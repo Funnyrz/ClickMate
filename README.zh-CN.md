@@ -1,104 +1,192 @@
 # ClickMate
 
-[English README](README.md)
+[English](README.md) · [下载最新版本](https://github.com/Funnyrz/ClickMate/releases/latest) · [MIT 许可证](LICENSE)
 
-ClickMate, 中文名“右键大师”，是一个原生 macOS Finder 效率工具。它基于 SwiftUI、AppKit 和 Finder Sync extension 构建，不仅可以在 Finder 右键菜单中加入可配置的 `ClickMate` 子菜单，还提供访达剪切、截图等可通过全局快捷键触发的快捷功能。
+ClickMate（右键大师）将常用文件工具带入 Finder：从模板新建文件、复制路径、在编辑器中打开文件夹、压缩所选项目，以及编辑 ZIP/JAR 内的文本。访达剪切与截图工具支持自定义全局快捷键，界面使用 SwiftUI 和 AppKit 原生构建。
 
-![右键大师访达右键菜单](img/clickmate-menu-zh-CN.png)
+**需要 macOS 14 或更高版本。** 正式安装包支持 Apple 芯片和 Intel Mac；只有从源码构建时才需要 Xcode。
 
-![右键大师设置界面 - 菜单](img/clickmate-settings-1-zh-CN.png)
+## 安装与快速上手
 
-![右键大师设置界面 - 权限](img/clickmate-settings-2-zh-CN.png)
+1. 从 [GitHub Releases](https://github.com/Funnyrz/ClickMate/releases/latest) 下载 DMG，将 **ClickMate.app** 拖入**应用程序**后打开。
+2. 在**权限**页选择需要的功能，完成对应设置。每项功能都有独立试用入口；权限状态与试用结果分别显示。
+3. 使用 Finder 工具时，在系统设置中启用 ClickMate Finder 扩展，并授权需要使用的文件夹。然后在桌面、文稿、下载等已监控文件夹内右键点击文件或空白区域。
+4. 在**快捷功能**页启用需要的快捷键，完成对应权限设置后再试用。
 
-## 功能特性
+| 功能 | 所需条件 |
+|---|---|
+| Finder 工具 | 启用 Finder 扩展并具有目标文件夹访问权限。访问失败时，可使用文件夹授权与磁盘访问诊断。 |
+| 访达剪切 | 启用后台服务，并为 **ClickMate Background Service** 授予**辅助功能**权限。 |
+| 截图 | 启用后台服务，并为 **ClickMate Background Service** 授予**屏幕录制**权限。 |
 
-- 支持选中文件、选中文件夹，以及已监控文件夹空白区域的 Finder 右键菜单。
-- 新建文件模板：文本、Markdown、JSON、CSV、HTML、CSS、JavaScript、Swift、Python，以及自定义扩展名。
-- 复制辅助：POSIX 路径、文件 URL、Shell 转义路径、文件名、基础文件名、扩展名、父级文件夹路径。
-- 打开辅助：Terminal、iTerm2、VS Code、Cursor、BBEdit、Sublime Text，以及自定义固定应用。
-- 哈希计算：SHA-256、SHA-1、MD5。
-- 文件工具：显示父级文件夹、带时间戳复制、创建替身、移动到新文件夹、压缩。
-- JAR/ZIP 原位编辑：右键单个 `.jar` 或 `.zip` 文件，选择“文件工具 → 编辑 JAR / ZIP”，即可在不解压整个压缩包的前提下浏览目录树并编辑 UTF-8 文本文件。编辑器以独立、可调整大小的窗口打开，支持首次保存前备份，并会在修改已签名 JAR 前发出提醒。
-- 高级工具：查看元数据、图片尺寸、切换隐藏文件显示。
-- 快捷功能：访达剪切、区域截图、当前显示器截图和长截图，支持自定义全局快捷键。
-- 设置界面：菜单布局、文件模板、应用检测、固定应用、监控文件夹、快捷功能和权限状态。
+只使用 Finder 工具时，**无需**开启屏幕录制权限。修改权限后如果出现“需重启”，请按提示操作。通知权限为可选项；即使关闭通知，也能从设置底部的**文件任务**查看结果。
 
-## 快捷功能
+## 功能介绍
 
-在设置界面的“快捷功能”页面中，可以分别启用功能、录制全局快捷键或恢复默认快捷键。快捷键必须包含 Command 或 Control，ClickMate 会阻止重复快捷键，并提示被 macOS 或其他应用占用的组合。
+### Finder 右键菜单
 
-快捷功能由轻量的 `ClickMate Background Service` 运行，因此关闭设置窗口或退出主应用后仍可响应快捷键。正式签名版本可以注册为后台登录项；未签名开发版本只在当前登录会话中持续运行，注销或重启后需要再次打开 ClickMate。
+新建文本、Markdown、JSON、CSV、HTML、CSS、JavaScript、Swift、Python 文件，或使用自己的模板。支持复制 POSIX 路径、文件 URL、Shell 转义路径、文件名、基础文件名、扩展名和父级路径，并可在 Terminal、iTerm2、VS Code、Cursor、BBEdit、Sublime Text 或固定应用中打开目标位置。
 
-### 访达剪切
+文件工具提供带时间戳的副本、真正的 Finder 替身、移动所选项目到新文件夹、压缩和压缩包编辑。高级工具支持查看元数据、图片尺寸及切换隐藏文件显示。
 
-- 默认快捷键为 `⌘X`。在 Finder 中选中文件或文件夹后触发剪切，再进入目标位置并按 `⌘V` 完成移动。
-- 粘贴前按 `⌘C` 可以取消待移动状态，恢复为普通复制操作。
-- 仅在 Finder 位于前台且焦点不在文本输入框时处理快捷键，避免影响其他应用和文件名编辑。
-- 需要为 `ClickMate Background Service` 开启辅助功能权限。
+菜单会根据上下文调整：空白区域提供新建文件、复制当前目录路径、在此打开和切换隐藏文件；移动、复制文件、制作替身、压缩及针对文件的工具需要明确选中项目。
 
-### 截图
+![使用演示文件展示的 ClickMate Finder 右键菜单](img/clickmate-finder-menu-zh-CN.png)
 
-- 默认快捷键为 `⌃⌘S`，从鼠标所在显示器开始选择截图区域。
-- 支持区域截图、鼠标所在显示器全屏截图，以及在选定区域中向下滚动并自动拼接的长截图。
-- 支持矩形、箭头、画笔、文字和打码标注，可切换颜色与线宽，并支持撤销、重做和清除。
-- 截图可以复制到剪贴板或保存为 PNG；长截图完成后会打开独立预览窗口继续编辑和导出。
-- 需要为 `ClickMate Background Service` 开启屏幕录制权限。
+*使用演示 ZIP 选择上下文采集原生菜单视图，并按原始位置合成。可用命令取决于选中项目和菜单配置。*
 
-## 环境要求
+### 快捷功能与访达剪切
 
-- macOS 14.0 或更高版本。
-- Xcode 以及 macOS 开发工具。
-- 本地无签名开发构建不强制要求 Apple Development team；如果要完整签名并分发 Finder extension，则需要配置开发团队和相关 entitlement。
+在**快捷功能**页分别启用功能、录制快捷键或恢复默认快捷键。快捷键必须包含 Command 或 Control；重复设置或注册冲突会显示提示。
 
-## 构建
+- **访达剪切 — `⌘X`：** 在 Finder 中选中文件并剪切，进入目标文件夹后按 `⌘V` 移动。粘贴前按 `⌘C` 可取消待移动状态。仅当 Finder 位于前台且焦点不在文本框内时处理剪切。
+- **截图 — `⌃⌘S`：** 从鼠标所在显示器开始，选择区域截图、当前显示器截图或长截图。
 
-用 Xcode 打开项目：
+后台服务会在关闭设置或退出主应用后继续响应快捷键。签名版本可以注册为登录项；未签名版本使用仅当前登录会话有效的服务，注销或重启后需要重新打开 ClickMate。
 
-```sh
-open ClickMate.xcodeproj
-```
+![显示访达剪切和截图快捷键的快捷功能页](img/clickmate-quick-features-zh-CN.png)
 
-也可以使用命令行构建：
+*演示快捷键与后台服务设置；你电脑上的状态以实际注册和授权结果为准。*
 
-```sh
-xcodebuild build -project ClickMate.xcodeproj -scheme ClickMate -destination 'platform=macOS'
-```
+### 截图与标注
 
-本地无签名验证时，可以显式关闭代码签名：
+选择区域或截取鼠标所在显示器，添加矩形、箭头、画笔、文字和打码标注，调整颜色与线宽，并可撤销、重做或清除标注。结果可以复制到剪贴板或保存为 PNG；按 `Esc` 取消截图。
+
+![在示例页面上使用截图标注工具](img/clickmate-screenshot-annotation-zh-CN.png)
+
+*使用专用示例页面展示原生截图工具，不包含私人桌面内容。*
+
+### 长截图
+
+选定区域后缓慢向下滚动，保留部分上一帧内容以便拼接。支持暂停、继续、手动完成和取消。连续两次无法找到重叠区域时会暂停并提示调整；已经拼接的内容仍可完成并导出。捕获同时受到时长和图像尺寸限制。
+
+完成后，图片会在独立预览窗口中打开，可继续标注、复制到剪贴板或导出 PNG。
+
+![示例页面的长截图预览](img/clickmate-scrolling-capture-zh-CN.png)
+
+*原生长截图预览，内容为专用示例页面。*
+
+### ZIP 与 JAR 文本编辑
+
+在 Finder 中选中单个 `.zip` 或 `.jar`，选择**文件工具 → 编辑 JAR / ZIP**，即可在独立、可调整大小的窗口中浏览或搜索条目，编辑支持的 UTF-8 文本。可选择在首次保存前备份原压缩包；修改已签名 JAR 前会提醒，因为修改内容会使原签名失效。
+
+存在未保存修改时，切换条目、打开其他压缩包、关闭窗口或退出都会提供**保存／放弃／取消**。保存失败或取消签名提醒时，会保留当前编辑内容与窗口。该功能面向压缩包内的文本，不提供二进制编辑或 JAR 签名功能。
+
+![压缩包编辑器中的演示 ZIP 与文本条目](img/clickmate-archive-editor-zh-CN.png)
+
+*使用临时示例压缩包及 UTF-8 配置内容。*
+
+### 文件任务、进度与恢复
+
+从设置底部打开**文件任务**，可重新查看进度和结果，不依赖系统通知。
+
+- **ZIP 压缩：** 支持单个文件、同目录多选及文件夹递归压缩，保留符号链接。单选使用源项目基础名称，多选使用“归档”；重名时添加数字后缀。临时 ZIP 生成并通过完整性验证后才发布到目标位置；失败或取消会清理临时产物，保留原文件。跨目录输入会明确报错。完成后可在 Finder 中显示结果。
+- **哈希计算：** SHA-256、SHA-1、MD5 在后台依次处理文件，按 1 MiB 分块读取，显示当前文件、已处理字节与总进度，并支持取消。全部成功后才自动复制结果；部分失败时显示逐项结果，提供**复制成功结果**。取消不会改变剪贴板。
+- **批量操作：** 带时间戳复制、制作替身和移动会逐项报告源路径、目标路径和错误。单项失败后继续处理其余项目。成功移动后可在当前应用会话中**恢复原位置**；恢复会跳过已改变的文件及原位置冲突，禁止覆盖，并逐项报告失败原因。
+
+![文件任务中的进度、逐项结果与移动恢复入口](img/clickmate-file-tasks-zh-CN.png)
+
+*演示任务同时展示进度、部分成功结果与恢复入口。任务历史和移动恢复仅在当前应用会话内有效。*
+
+## 个性化设置
+
+<details>
+<summary>菜单 — 选择命令与调整顺序</summary>
+
+启用常用命令，调整命令顺序，或恢复已移除的默认项。新建文件条目使用**模板**页中的配置。
+
+![菜单设置中的命令启用与排序](img/clickmate-settings-menus-zh-CN.png)
+
+*示例菜单配置。*
+
+</details>
+
+<details>
+<summary>布局 — 组织子菜单与顶层快捷入口</summary>
+
+选择哪些分组折叠到 ClickMate 子菜单，哪些直接显示在 Finder 右键菜单顶层。可为选定命令和文件模板添加直接入口。
+
+![菜单布局中的折叠与顶层快捷入口设置](img/clickmate-settings-layout-zh-CN.png)
+
+*示例布局配置。*
+
+</details>
+
+<details>
+<summary>模板 — 编辑文件名与内容</summary>
+
+编辑模板显示名称、默认基础文件名、扩展名和文本内容，也可复制内置模板。扩展名允许留空；编辑器会预览最终文件名，并拒绝空名称、路径分隔符和非法文件名。编辑使用草稿，取消不会改变已保存的模板。
+
+编辑现有模板会保留 ID，使已有菜单快捷入口继续有效。模板仅包含普通文本，不支持变量展开或脚本执行。
+
+![包含文件名预览与 Markdown 正文的模板编辑器](img/clickmate-template-editor-zh-CN.png)
+
+*演示 Markdown 模板。*
+
+</details>
+
+<details>
+<summary>应用 — 检测编辑器与固定应用</summary>
+
+查看受支持应用的安装状态，刷新检测、调整顺序或置顶其他 `.app`。固定应用出现在**用固定应用打开**菜单中，已移除的默认项可以恢复。
+
+![显示已检测应用与固定应用的设置页](img/clickmate-settings-apps-zh-CN.png)
+
+*使用公开应用路径的示例应用列表。*
+
+</details>
+
+<details>
+<summary>权限 — 功能引导、试用与诊断</summary>
+
+引导按 **Finder 工具**、**访达剪切**和**截图**分别展示“可用／待授权／需重启／异常”。可以在选定文件夹中试用 Finder 工具，使用临时测试文件试用剪切，或开始并取消截图试用。权限就绪不会自动把试用标记为成功。
+
+展开**完整权限与详细诊断**，可查看后台服务、辅助功能、屏幕录制、磁盘访问、Finder 扩展及监控文件夹状态，并使用对应的系统设置入口和恢复操作。在这里可授权额外的监控文件夹。
+
+![按功能组织并单独显示试用结果的权限引导](img/clickmate-permissions-zh-CN.png)
+
+*演示设置与试用状态，不代表你电脑上的实际授权结果。*
+
+</details>
+
+<details>
+<summary>设置数据 — 导入导出与恢复</summary>
+
+从设置底部打开**设置数据**。带格式版本的 JSON 包含菜单、模板、快捷键、截图设置、语言及应用／目录路径。导入前先预览变更，确认后整体替换；当前有效配置会先备份。未知格式或校验失败不会替换当前配置。
+
+系统授权、权限书签及本机服务／运行状态不会迁移。仍匹配的本机目录书签会保留，新导入目录需在这台 Mac 上重新授权。导出文件包含配置的路径与模板内容，分享前请自行检查。
+
+配置采用原子写入，并备份最近一次有效配置。保存失败时显示原因和重试入口；配置损坏时保留原文件，需明确选择备份恢复或重置，不会静默丢弃。
+
+![设置数据中的恢复与导入导出操作](img/clickmate-settings-data-zh-CN.png)
+
+*演示配置数据，不包含私人路径或授权书签。*
+
+</details>
+
+## 构建与分发
+
+<details>
+<summary>本地构建、测试与静态分析</summary>
+
+使用带 macOS SDK 的 Xcode，打开 `ClickMate.xcodeproj` 并选择 **ClickMate** scheme。本地未签名验证命令：
 
 ```sh
 xcodebuild build -project ClickMate.xcodeproj -scheme ClickMate -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 xcodebuild test -project ClickMate.xcodeproj -scheme ClickMate -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+xcodebuild analyze -project ClickMate.xcodeproj -scheme ClickMate -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 ```
 
-Debug 配置面向本地开发。Release 构建保留用于正式分发签名的 entitlement 文件。
+完整签名构建需要为主应用、Helper 与 Finder 扩展使用同一开发团队，并配置 App Group 能力。安装后在系统设置中启用 Finder 扩展。
 
-## 本地运行
+中英文文档配图的生成方法见[截图生成说明](Scripts/README-screenshots.md)。
 
-1. 在 Xcode 中打开 `ClickMate.xcodeproj`。
-2. 选择 `ClickMate` scheme。
-3. 如果需要完整可用的已签名 Finder extension，请为 app 和 Finder extension targets 设置 development team，并启用 App Group entitlement。
-4. 运行 app。
-5. 打开系统设置，在 Extensions 中启用 ClickMate Finder extension。
-6. 如果菜单没有立即出现，可以重启 Finder：
+</details>
 
-```sh
-killall Finder
-```
+<details>
+<summary>打包正式签名、开发或未签名 DMG</summary>
 
-然后在 Desktop、Documents、Downloads，或在 ClickMate 的 Permissions 页面添加的文件夹中右键测试。
-
-## 在线更新
-
-ClickMate 最多每 24 小时自动读取一次 GitHub 上最新的正式 Release，并将其 tag 与当前应用的 `CFBundleShortVersionString` 比较；比较时会忽略 tag 开头的 `v`。草稿和预发布版本不会作为常规更新提示，手动检查不受 24 小时间隔限制。
-
-发现更高版本后，ClickMate 对同一版本只通知一次，并引导你前往可信的 GitHub Release 页面，由你手动下载并替换应用，不会静默下载或自动安装。自动检查失败时保持静默，手动检查会显示失败结果，但都不会影响当前已安装版本继续运行。
-
-正式发布产物必须使用稳定的 Developer ID Application 身份签名并完成公证。主应用、后台 Helper 和 Finder Extension 使用固定 Bundle ID 与相同 Team ID，使 macOS 权限在正常覆盖升级后仍关联到同一产品身份。
-
-## 打包正式签名 DMG
-
-配置 Developer ID Application 身份和 `notarytool` 钥匙串配置后运行：
+**公开分发：** 配置 Developer ID Application 证书、具备 App Group 授权的开发团队及 `notarytool` 钥匙串配置：
 
 ```sh
 export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
@@ -107,67 +195,54 @@ export CLICKMATE_NOTARY_PROFILE='clickmate-notary'
 Scripts/package_signed_dmg.sh
 ```
 
-脚本通过 Xcode 自动 Developer ID 签名进行归档和导出，使主应用与 Finder Extension 获得授权 `group.com.zxacn` 的描述文件。脚本会拒绝缺少描述文件、application/team identifier 不一致、App Group 未授权、Bundle ID 不稳定、非 Developer ID 签名或未启用 hardened runtime 的产物，并在生成正式包前验证公证票据和 Gatekeeper 评估。
+脚本构建 Universal 2 二进制，验证组件身份、描述文件、entitlement、嵌套签名与 hardened runtime，然后对 DMG 签名、公证、附加公证票据并评估。产物位于 `build/dist/`。主应用、Helper 和扩展应在版本升级间保留固定 Bundle ID 与相同 Team ID。
 
-## 打包未签名 DMG
+**本地权限与 Finder 验收：** 使用稳定的 Apple Development 团队。此包用于本地测试，不用于公开分发。
 
-仓库提供了本地未签名 DMG 打包脚本：
+```sh
+export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+# 可选：存在多张显示名称相同的证书时指定证书 SHA：
+export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
+Scripts/package_development_dmg.sh
+```
+
+**未签名诊断：** 不需要开发团队。
 
 ```sh
 Scripts/package_unsigned_dmg.sh
 ```
 
-该 DMG 可以复制到 `/Applications`，用于验证安全目录中的默认 Finder Extension 右键操作。App Group 不可用时，需要主应用执行的操作会改用 URL 路由，而不是共享命令队列。临时签名可能随重新构建变化，因此 macOS 可能再次要求辅助功能、屏幕录制和完全磁盘访问权限。打包脚本会主动移除 App Group entitlement，因此自定义 Finder 配置同步、运行状态共享和自动权限验证仍不可用。请勿将其用于正式发布或权限身份稳定性验收。
+未签名包移除 App Group entitlement。安全目录中的默认 Finder 操作可使用 URL 降级路径，但自定义 Finder 配置同步、共享运行状态和自动权限验证不可用。快捷功能服务仅在当前登录会话中启动，重新构建后的临时签名可能需要重新授权。请使用签名版本验证权限身份稳定性及完整共享队列路径。
 
-## 打包本地 Apple Development DMG
+</details>
 
-主应用、Helper 和 Finder Extension 必须使用同一个稳定开发团队：
+<details>
+<summary>手动发布 GitHub Release</summary>
 
-```sh
-export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
-# 可选：存在多张同名证书时填写准确的证书 SHA。
-export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
-Scripts/package_development_dmg.sh
-```
+1. 更新 Debug 和 Release 配置中的 `CLICKMATE_MARKETING_VERSION` 与 `CLICKMATE_BUILD_VERSION`，测试并提交发布改动，再创建并推送匹配版本的 tag。
+2. 使用上述签名与公证配置运行 `Scripts/package_signed_dmg.sh`，验证安装包中的主应用、Helper、Finder 扩展、版本号和两种架构。
+3. 在仓库的 [Releases 页面](https://github.com/Funnyrz/ClickMate/releases)从该 tag 创建发行版，填写更新说明，上传 `build/dist/` 下的正式签名 DMG，再发布。面向所有用户的更新使用普通正式版本；草稿和预发布版本不会作为常规更新提示。
 
-脚本使用 Xcode 自动签名，不再对无签名产物进行手工补签。它会拒绝缺少 provisioning profile、application/team identifier entitlement、App Group 授权、hardened runtime、Team ID 或 Bundle ID 不一致、嵌套签名无效以及非 Universal 2 的产物。该包可用于本机 Finder Extension 和权限验收，但不能用于公开分发。
-Team ID 应以 `codesign` 或证书 Subject OU 为准，不能只相信证书显示名称括号中的文本。
+ClickMate 最多每 24 小时自动检查一次最新正式版本，**检查更新**不受该间隔限制。版本比较忽略 tag 开头的 `v`。更新入口打开可信的 GitHub Release 页面，由用户手动下载并替换，不会静默安装。
 
-## 在本地发布 GitHub Release
+</details>
 
-请先安装并登录 GitHub CLI，同时确保本机具备 `curl`、`jq` 和 Xcode 命令行工具。更新 Debug 与 Release 构建配置中的 `CLICKMATE_MARKETING_VERSION` 和 `CLICKMATE_BUILD_VERSION`，然后提交发布改动。
+## 常见问题
 
-运行发布脚本前，需要配置 `CLICKMATE_DEVELOPMENT_TEAM`、`CLICKMATE_SIGNING_IDENTITY` 与 `CLICKMATE_NOTARY_PROFILE`，并自行创建和推送 release tag：
+**Finder 菜单没有出现，或某个命令不可用？** 检查扩展是否启用、文件夹是否已监控和授权、命令是否启用。针对文件的命令需要明确选中项目。可使用权限诊断；如系统提示重启，按提示操作，或保存正在进行的工作后重新启动 Finder。
 
-```sh
-git tag -a v1.4 -m "Release v1.4"
-git push origin v1.4
-Scripts/release_github.sh v1.4
-```
+**快捷键为什么失效？** 检查后台服务、快捷键冲突，以及授予后台服务的权限，而不只是主应用权限。未签名构建在注销或重启后需要重新打开；日常使用建议将稳定签名版本保留在应用程序目录。
 
-如需在发行版中加入自定义更新说明，先创建一个 Markdown 文件，并通过 `--notes-file`（或 `-F`）传入：
+**所有移动都能以后再恢复吗？** 恢复仅覆盖本次应用会话中记录的成功批量移动；退出应用或清理已完成任务后记录会消失。文件变化或原位置冲突时会跳过，不能替代文件备份。
 
-```md
-## 本次更新
+**导入设置能同时迁移另一台 Mac 的权限吗？** 不能。导入仅迁移可移植设置，新文件夹及所需系统权限需在本机重新授权。
 
-- 新增某项功能
-- 修复某个问题
-```
-
-```sh
-Scripts/release_github.sh v1.4 --notes-file ReleaseNotes/v1.4.md
-```
-
-自定义说明会显示在 GitHub 自动生成的提交/合并记录之前。说明文件应在创建 tag 前提交，以保持发布记录可追溯；不传 `--notes-file` 时仍只使用 GitHub 自动生成的说明。
-
-脚本也接受 `1.4`，并会规范化为 `v1.4`。脚本要求工作区干净，并检查 bundle 版本、tag、目标 Release 和版本递增关系；随后运行测试，调用 `Scripts/package_signed_dmg.sh` 构建并公证 DMG，以只读方式挂载验证主应用、Helper、Finder Extension、版本号以及 `arm64` + `x86_64` 可执行文件，最后创建 GitHub Release 并上传正式签名 DMG。
-
-`Scripts/release_github.sh` 不会创建、移动或推送 tag，并且在缺少正式签名或公证配置时直接失败，不会回退上传临时签名产物。
+**文档截图是否暴露真实账号？** 配图使用临时文件、压缩包及示例页面；演示状态均有图注。残留个人标识会被遮蔽，发布 PNG 会重新编码并移除源元数据。
 
 ## 贡献
 
-欢迎贡献。请尽量保持改动聚焦，遵循项目现有 Swift 和 SwiftUI 风格；如果修改应用逻辑，请使用 `xcodebuild test` 验证相关行为。
+欢迎提交聚焦的修复、体验改进及翻译。请遵循现有 Swift／SwiftUI 风格，为行为变更补充回归测试并运行相关测试。反馈问题时请附 macOS 版本、构建／签名类型及复现步骤，并移除日志和截图中的私人路径与身份信息。
 
 ## 许可证
 
-ClickMate 使用 [MIT License](LICENSE) 开源。
+ClickMate 使用 [MIT 许可证](LICENSE)开源。

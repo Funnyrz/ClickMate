@@ -39,7 +39,7 @@ final class LongScreenshotCaptureController {
     private var captureTask: Task<Void, Never>?
     private var timeoutTask: Task<Void, Never>?
     private var duplicateCount = 0
-    private var failureCount = 0
+    private var failureState = LongScreenshotFailureState()
     private var isReady = false
     private var hasPendingScroll = false
     private var isPaused = false
@@ -97,6 +97,7 @@ final class LongScreenshotCaptureController {
     func cancel() {
         guard !isFinished else { return }
         isFinished = true
+        failureState.reset()
         cleanup()
         let completion = onCancelled
         clearCallbacks()
@@ -141,8 +142,7 @@ final class LongScreenshotCaptureController {
                     return
                 }
                 guard targetApplicationIsActive() else {
-                    failureCount += 1
-                    if failureCount >= 3 {
+                    if failureState.recordCaptureFailure() {
                         pause(with: LongScreenshotCaptureError.captureFailed)
                     } else {
                         scheduleCapture(delay: .milliseconds(250))
@@ -158,7 +158,7 @@ final class LongScreenshotCaptureController {
                     return
                 }
                 let result = try await assembler.append(stableSample)
-                failureCount = 0
+                let shouldPauseForOverlap = failureState.recordAppend(result)
                 switch result {
                 case .appended:
                     duplicateCount = 0
@@ -169,8 +169,7 @@ final class LongScreenshotCaptureController {
                         return
                     }
                 case .noOverlap:
-                    failureCount += 1
-                    if failureCount >= 2 {
+                    if shouldPauseForOverlap {
                         pause(with: LongScreenshotCaptureError.noOverlap)
                         return
                     }
@@ -188,12 +187,10 @@ final class LongScreenshotCaptureController {
                 case .pixelHeightLimitExceeded, .rawMemoryLimitExceeded:
                     await finish(reachedLimit: true)
                 default:
-                    failureCount += 1
                     pause(with: error)
                 }
             } catch {
-                failureCount += 1
-                if failureCount >= 3 {
+                if failureState.recordCaptureFailure() {
                     pause(with: error)
                 } else {
                     scheduleCapture(delay: .milliseconds(250))
@@ -222,7 +219,7 @@ final class LongScreenshotCaptureController {
         isPaused.toggle()
         if !isPaused {
             duplicateCount = 0
-            failureCount = 0
+            failureState.reset()
             scheduleCapture(delay: .milliseconds(180))
         }
         Task { [weak self] in

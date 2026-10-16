@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 final class ArchiveEditorWindowController: NSObject, NSWindowDelegate {
     static let shared = ArchiveEditorWindowController()
 
-    private let preferencesStore = PreferencesStore()
+    private let preferencesStore = AppPreferences.store
     private let model = ArchiveEditorModel()
     private var window: NSWindow?
 
@@ -20,9 +20,20 @@ final class ArchiveEditorWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        sender.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        model.requestClose { allowed in
+            guard allowed else { return }
+            sender.orderOut(nil)
+            if AppWindows.canHideForBackgroundAction { NSApp.setActivationPolicy(.accessory) }
+        }
         return false
+    }
+
+    func requestTermination(completion: @escaping (Bool) -> Void) {
+        if let window, model.isDirty {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+        model.requestTermination(completion: completion)
     }
 
     private func makeWindowIfNeeded() -> NSWindow {
@@ -37,14 +48,14 @@ final class ArchiveEditorWindowController: NSObject, NSWindowDelegate {
         window.setContentSize(NSSize(width: 1180, height: 760))
         window.minSize = NSSize(width: 900, height: 580)
         window.isReleasedWhenClosed = false
-        window.identifier = NSUserInterfaceItemIdentifier("com.zxacn.clickmate.archive-editor")
+        window.identifier = AppWindows.archiveID
         window.delegate = self
         self.window = window
         return window
     }
 
     private func hideSettingsWindows(excluding editorWindow: NSWindow) {
-        for window in NSApp.windows where window !== editorWindow {
+        for window in NSApp.windows where window !== editorWindow && (window === AppWindows.settingsWindow || window.identifier == AppWindows.settingsID) {
             window.orderOut(nil)
         }
     }
@@ -72,24 +83,24 @@ struct ArchiveEditorView: View {
             }
         }
         .alert(L10n.string("archive.signedTitle"), isPresented: $model.showSignatureWarning) {
-            Button(L10n.string("archive.cancel"), role: .cancel) {}
+            Button(L10n.string("archive.cancel"), role: .cancel) { model.cancelSignatureWarning() }
             Button(L10n.string("archive.continue")) { model.saveAfterSignatureWarning(createBackup: store.preferences.archiveEditorCreatesBackup) }
         } message: {
             Text(L10n.string("archive.signedMessage"))
         }
         .confirmationDialog(
             L10n.string("archive.unsavedTitle"),
-            isPresented: pendingArchiveBinding,
+            isPresented: pendingActionBinding,
             titleVisibility: .visible
         ) {
-            Button(L10n.string("archive.saveAndOpen")) {
-                model.beginSaveAndOpenPending(createBackup: store.preferences.archiveEditorCreatesBackup)
+            Button(L10n.string("archive.save")) {
+                model.savePendingAction(createBackup: store.preferences.archiveEditorCreatesBackup)
             }
-            Button(L10n.string("archive.discardAndOpen"), role: .destructive) {
-                model.discardAndOpenPending()
+            Button(L10n.string("archive.discard"), role: .destructive) {
+                model.discardPendingAction()
             }
             Button(L10n.string("archive.cancel"), role: .cancel) {
-                model.cancelPendingOpen()
+                model.cancelPendingAction()
             }
         } message: {
             Text(L10n.string("archive.unsavedMessage"))
@@ -150,22 +161,19 @@ struct ArchiveEditorView: View {
                 .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: model.selectedEntryName) { _, name in
-            model.selectEntry(named: name)
-        }
     }
 
     private var archiveTree: some View {
         Group {
             if model.searchText.isEmpty {
-                List(selection: $model.selectedEntryName) {
+                List(selection: entrySelectionBinding) {
                     OutlineGroup(model.tree, children: \.children) { node in
                         ArchiveTreeRow(node: node)
                             .tag(node.entry?.name)
                     }
                 }
             } else {
-                List(model.filteredEntries, selection: $model.selectedEntryName) { entry in
+                List(model.filteredEntries, selection: entrySelectionBinding) { entry in
                     Label(entry.name, systemImage: entry.isDirectory ? "folder" : "doc.text")
                         .tag(entry.name)
                 }
@@ -230,10 +238,14 @@ struct ArchiveEditorView: View {
         }
     }
 
-    private var pendingArchiveBinding: Binding<Bool> {
+    private var entrySelectionBinding: Binding<String?> {
+        Binding(get: { model.selectedEntryName }, set: { model.requestSelectEntry(named: $0) })
+    }
+
+    private var pendingActionBinding: Binding<Bool> {
         Binding(
-            get: { model.isShowingOpenConfirmation },
-            set: { model.isShowingOpenConfirmation = $0 }
+            get: { model.isShowingUnsavedConfirmation },
+            set: { model.setUnsavedConfirmationPresented($0) }
         )
     }
 
@@ -257,215 +269,5 @@ private struct ArchiveTreeRow: View {
 
     var body: some View {
         Label(node.name, systemImage: node.isDirectory ? "folder" : "doc.text")
-    }
-}
-
-struct ArchiveTreeNode: Identifiable {
-    let id: String
-    let name: String
-    let entry: ZipArchiveEditor.Entry?
-    let children: [ArchiveTreeNode]?
-
-    var isDirectory: Bool { children != nil || entry?.isDirectory == true }
-}
-
-@MainActor
-final class ArchiveEditorModel: ObservableObject {
-    @Published private(set) var archive: ZipArchiveEditor.Archive?
-    @Published var searchText = ""
-    @Published var selectedEntryName: String?
-    @Published private(set) var selectedEntry: ZipArchiveEditor.Entry?
-    @Published var editorText = ""
-    @Published private(set) var originalText = ""
-    @Published private(set) var isEditable = false
-    @Published var showSignatureWarning = false
-    @Published var errorMessage: String?
-    @Published private(set) var tree: [ArchiveTreeNode] = []
-    @Published private(set) var pendingArchiveURL: URL?
-    @Published var isShowingOpenConfirmation = false
-
-    private var hasSecurityScopedAccess = false
-    private var didAcknowledgeSignature = false
-    private var didCreateBackup = false
-
-    var isDirty: Bool { isEditable && editorText != originalText }
-    var lineEndingLabel: String { originalText.contains("\r\n") ? "CRLF" : "LF" }
-    var filteredEntries: [ZipArchiveEditor.Entry] {
-        guard let archive else { return [] }
-        return archive.entries.filter { !$0.isDirectory && $0.name.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    func requestOpen(_ url: URL) {
-        guard isDirty else {
-            open(url)
-            return
-        }
-        pendingArchiveURL = url
-        isShowingOpenConfirmation = true
-    }
-
-    func beginSaveAndOpenPending(createBackup: Bool) {
-        guard pendingArchiveURL != nil else { return }
-        isShowingOpenConfirmation = false
-        guard archive?.hasSignatureFiles != true || didAcknowledgeSignature else {
-            showSignatureWarning = true
-            return
-        }
-        saveCurrent(createBackup: createBackup)
-        openPendingArchiveIfSaved()
-    }
-
-    func discardAndOpenPending() {
-        guard let pendingArchiveURL else { return }
-        self.pendingArchiveURL = nil
-        isShowingOpenConfirmation = false
-        open(pendingArchiveURL)
-    }
-
-    func cancelPendingOpen() {
-        pendingArchiveURL = nil
-        isShowingOpenConfirmation = false
-    }
-
-    func open(_ url: URL) {
-        closeArchive()
-        errorMessage = nil
-        hasSecurityScopedAccess = url.startAccessingSecurityScopedResource()
-        do {
-            archive = try ZipArchiveEditor.open(url)
-            tree = Self.makeTree(from: archive?.entries ?? [])
-            didAcknowledgeSignature = false
-            didCreateBackup = false
-            searchText = ""
-        } catch {
-            if hasSecurityScopedAccess { url.stopAccessingSecurityScopedResource() }
-            hasSecurityScopedAccess = false
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func closeArchive() {
-        if hasSecurityScopedAccess { archive?.url.stopAccessingSecurityScopedResource() }
-        hasSecurityScopedAccess = false
-        archive = nil
-        selectedEntryName = nil
-        selectedEntry = nil
-        tree = []
-        editorText = ""
-        originalText = ""
-        isEditable = false
-    }
-
-    func selectEntry(named name: String?) {
-        guard let name, let archive, let entry = archive.entries.first(where: { $0.name == name }), !entry.isDirectory else {
-            selectedEntry = nil
-            isEditable = false
-            return
-        }
-        do {
-            let data = try ZipArchiveEditor.readEntry(named: name, from: archive)
-            selectedEntry = entry
-            if let text = Self.decodeText(data) {
-                editorText = text
-                originalText = text
-                isEditable = true
-            } else {
-                editorText = ""
-                originalText = ""
-                isEditable = false
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func requestSave(createBackup: Bool) {
-        guard archive?.hasSignatureFiles == true, !didAcknowledgeSignature else {
-            saveCurrent(createBackup: createBackup)
-            return
-        }
-        showSignatureWarning = true
-    }
-
-    func saveCurrent(createBackup: Bool) {
-        guard let archive, let entry = selectedEntry, isEditable, isDirty else { return }
-        do {
-            try ZipArchiveEditor.replaceEntry(
-                named: entry.name,
-                with: Data(editorText.utf8),
-                in: archive,
-                createBackup: createBackup && !didCreateBackup
-            )
-            didCreateBackup = didCreateBackup || createBackup
-            didAcknowledgeSignature = true
-            self.archive = try ZipArchiveEditor.open(archive.url)
-            selectedEntry = self.archive?.entries.first(where: { $0.name == entry.name })
-            originalText = editorText
-            tree = Self.makeTree(from: self.archive?.entries ?? [])
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func saveAfterSignatureWarning(createBackup: Bool) {
-        saveCurrent(createBackup: createBackup)
-        openPendingArchiveIfSaved()
-    }
-
-    private func openPendingArchiveIfSaved() {
-        guard let pendingArchiveURL, !isDirty, errorMessage == nil else { return }
-        self.pendingArchiveURL = nil
-        isShowingOpenConfirmation = false
-        open(pendingArchiveURL)
-    }
-
-    private static func decodeText(_ data: Data) -> String? {
-        guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { return nil }
-        return text
-    }
-
-    private static func makeTree(from entries: [ZipArchiveEditor.Entry]) -> [ArchiveTreeNode] {
-        let root = TreeBuilder(name: "", path: "")
-        for entry in entries {
-            var current = root
-            let components = entry.name.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
-            for (index, component) in components.enumerated() {
-                let path = current.path.isEmpty ? component : "\(current.path)/\(component)"
-                if current.children[component] == nil {
-                    current.children[component] = TreeBuilder(name: component, path: path)
-                }
-                current = current.children[component]!
-                if index == components.count - 1 { current.entry = entry }
-            }
-        }
-        return root.nodes
-    }
-
-    private final class TreeBuilder {
-        let name: String
-        let path: String
-        var entry: ZipArchiveEditor.Entry?
-        var children: [String: TreeBuilder] = [:]
-
-        init(name: String, path: String) {
-            self.name = name
-            self.path = path
-        }
-
-        var nodes: [ArchiveTreeNode] {
-            children.values.sorted {
-                let lhsDirectory = !$0.children.isEmpty
-                let rhsDirectory = !$1.children.isEmpty
-                if lhsDirectory != rhsDirectory { return lhsDirectory }
-                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-            }.map { child in
-                ArchiveTreeNode(
-                    id: child.path,
-                    name: child.name,
-                    entry: child.entry,
-                    children: child.children.isEmpty ? nil : child.nodes
-                )
-            }
-        }
     }
 }

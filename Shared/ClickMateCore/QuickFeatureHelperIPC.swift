@@ -62,6 +62,7 @@ struct QuickFeatureHelperCommand: Codable, Equatable, Hashable, Identifiable {
         case requestAccessibility
         case requestScreenRecording
         case refreshStatus
+        case testScreenshot
         case beginShortcutRecording(sessionID: UUID)
         case endShortcutRecording(sessionID: UUID)
         case restart
@@ -76,6 +77,7 @@ struct QuickFeatureHelperCommand: Codable, Equatable, Hashable, Identifiable {
             case requestAccessibility
             case requestScreenRecording
             case refreshStatus
+            case testScreenshot
             case beginShortcutRecording
             case endShortcutRecording
             case restart
@@ -91,6 +93,8 @@ struct QuickFeatureHelperCommand: Codable, Equatable, Hashable, Identifiable {
                 self = .requestScreenRecording
             case .refreshStatus:
                 self = .refreshStatus
+            case .testScreenshot:
+                self = .testScreenshot
             case .beginShortcutRecording:
                 self = .beginShortcutRecording(
                     sessionID: try container.decode(UUID.self, forKey: .sessionID)
@@ -115,6 +119,8 @@ struct QuickFeatureHelperCommand: Codable, Equatable, Hashable, Identifiable {
                 try container.encode(Kind.requestScreenRecording, forKey: .kind)
             case .refreshStatus:
                 try container.encode(Kind.refreshStatus, forKey: .kind)
+            case .testScreenshot:
+                try container.encode(Kind.testScreenshot, forKey: .kind)
             case let .beginShortcutRecording(sessionID):
                 try container.encode(Kind.beginShortcutRecording, forKey: .kind)
                 try container.encode(sessionID, forKey: .sessionID)

@@ -278,6 +278,7 @@ enum FinderActionRoute: Equatable {
         static let copyHash = "copyHash"
         static let openHere = "openHere"
         static let compress = "compress"
+        static let batchFileAction = "batchFileAction"
         static let editArchive = "editArchive"
         static let toggleHiddenFiles = "toggleHiddenFiles"
     }
@@ -286,6 +287,7 @@ enum FinderActionRoute: Equatable {
     case copyHash(algorithm: HashAlgorithm, urls: [URL])
     case openHere(command: MenuCommand, directory: URL)
     case compress(urls: [URL])
+    case batchFileAction(command: MenuCommand, urls: [URL])
     case editArchive(url: URL)
     case toggleHiddenFiles
 
@@ -313,6 +315,13 @@ enum FinderActionRoute: Equatable {
             )
         case .compress(let urls):
             return Self.routeURL(host: Host.compress, queryItems: [], urls: urls)
+        case .batchFileAction(let command, let urls):
+            guard Self.isAllowedBatchFileAction(command), !urls.isEmpty else { return nil }
+            return Self.routeURL(
+                host: Host.batchFileAction,
+                queryItems: [URLQueryItem(name: "command", value: command.rawValue)],
+                urls: urls
+            )
         case .editArchive(let url):
             guard ArchiveEditorRoute.supports(url) else { return nil }
             return Self.routeURL(host: Host.editArchive, queryItems: [], urls: [url])
@@ -331,6 +340,8 @@ enum FinderActionRoute: Equatable {
             PendingCommand.openHere(command: command, directoryURL: directory)
         case .compress(let urls):
             PendingCommand.compress(urls: urls)
+        case .batchFileAction(let command, let urls):
+            PendingCommand.batchFileAction(command: command, urls: urls)
         case .editArchive(let url):
             PendingCommand.editArchive(url: url)
         case .toggleHiddenFiles:
@@ -339,8 +350,10 @@ enum FinderActionRoute: Equatable {
     }
 
     var requiresVisibleWindow: Bool {
-        if case .editArchive = self { return true }
-        return false
+        switch self {
+        case .editArchive, .compress, .copyHash, .batchFileAction: return true
+        default: return false
+        }
     }
 
     init?(url: URL) {
@@ -351,6 +364,11 @@ enum FinderActionRoute: Equatable {
             return nil
         }
         let queryItems = components.queryItems ?? []
+        let requestItems = queryItems.filter { $0.name == "requestID" }
+        guard requestItems.isEmpty || (
+            requestItems.count == 1 && requestItems[0].value.flatMap(UUID.init(uuidString:)) != nil
+        ) else { return nil }
+        let actionItems = queryItems.filter { $0.name != "requestID" }
 
         switch host {
         case Host.createFile:
@@ -382,6 +400,13 @@ enum FinderActionRoute: Equatable {
         case Host.compress:
             guard let urls = Self.fileURLs(in: queryItems), !urls.isEmpty else { return nil }
             self = .compress(urls: urls)
+        case Host.batchFileAction:
+            guard let commandValue = Self.singleValue(named: "command", in: queryItems),
+                  let command = MenuCommand(rawValue: commandValue),
+                  Self.isAllowedBatchFileAction(command),
+                  let urls = Self.fileURLs(in: queryItems), !urls.isEmpty
+            else { return nil }
+            self = .batchFileAction(command: command, urls: urls)
         case Host.editArchive:
             guard let url = Self.fileURLs(in: queryItems, expectedCount: 1)?.first,
                   ArchiveEditorRoute.supports(url)
@@ -390,7 +415,7 @@ enum FinderActionRoute: Equatable {
             }
             self = .editArchive(url: url)
         case Host.toggleHiddenFiles:
-            guard queryItems.isEmpty else { return nil }
+            guard actionItems.isEmpty else { return nil }
             self = .toggleHiddenFiles
         default:
             return nil
@@ -406,7 +431,7 @@ enum FinderActionRoute: Equatable {
         var components = URLComponents()
         components.scheme = AppConstants.urlScheme
         components.host = host
-        components.queryItems = queryItems + urls.map {
+        components.queryItems = [URLQueryItem(name: "requestID", value: UUID().uuidString)] + queryItems + urls.map {
             URLQueryItem(name: "url", value: $0.absoluteString)
         }
         return components.url
@@ -433,6 +458,10 @@ enum FinderActionRoute: Equatable {
 
     private static func isAllowedOpenHereCommand(_ command: MenuCommand) -> Bool {
         command == .openTerminal || command == .openITerm
+    }
+
+    private static func isAllowedBatchFileAction(_ command: MenuCommand) -> Bool {
+        command == .duplicateTimestamp || command == .createAlias || command == .moveToNewFolder
     }
 }
 

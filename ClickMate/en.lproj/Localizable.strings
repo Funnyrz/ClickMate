@@ -38,8 +38,8 @@
 "archive.notTextDescription" = "Only UTF-8 text files can be edited in ClickMate.";
 "archive.selectTitle" = "Select a file";
 "archive.selectDescription" = "Choose a text file from the archive to view or edit it.";
-"archive.unsavedTitle" = "Open another archive?";
-"archive.unsavedMessage" = "The current file has unsaved changes.";
+"archive.unsavedTitle" = "Save your changes?";
+"archive.unsavedMessage" = "Save or discard the current changes before continuing.";
 "archive.saveAndOpen" = "Save and Open";
 "archive.discardAndOpen" = "Discard Changes and Open";
 
@@ -300,3 +300,241 @@
 "permissions.fullDiskAccessManualVerificationStatus" = "Verified by file actions";
 "permissions.fullDiskAccessManualVerificationDetail" = "This build cannot verify Full Disk Access automatically; that does not mean access failed. Effective access is confirmed by your next user-initiated file action.";
 "quickFeatures.permissionFailed" = "Permission request failed";
+
+"tasks.title" = "File Tasks";
+
+"tasks.archiveName" = "Archive";
+
+"tasks.cancelled" = "Cancelled. Completed items are shown below.";
+
+"tasks.clearFinished" = "Clear Finished";
+
+"tasks.empty" = "No File Tasks";
+
+"tasks.cancel" = "Cancel";
+
+"tasks.reveal" = "Show in Finder";
+
+"tasks.copySuccess" = "Copy Successful Results";
+
+"archive.discard" = "Discard";
+
+"compression.noFiles" = "Select at least one file.";
+
+"compression.mixedDirectories" = "Select files from the same folder.";
+
+"compression.invalidName" = "The archive name is invalid.";
+
+"compression.commandFailed" = "ZIP operation failed (%d): %@";
+
+"tasks.partial" = "Some files could not be processed. Review the results below.";
+
+"tasks.newFolder" = "New Folder";
+
+"tasks.restore" = "Restore Original Locations";
+
+"tasks.summary" = "%d succeeded · %d failed";
+
+"tasks.stage.compressing" = "Compressing…";
+
+"tasks.stage.validating" = "Checking archive…";
+
+"tasks.stage.publishing" = "Saving archive…";
+
+"batch.changedSinceMove" = "File changed since it was moved.";
+
+"batch.originalPathOccupied" = "The original location is occupied.";
+
+"batch.sourceChangedDuringCopy" = "The source changed while it was being copied.";
+
+"batch.copiedButSourceRemains" = "A copy was retained at %@; source removal failed: %@";
+
+"batch.movedButRestoreUnavailable" = "Moved to %@, but restoring is unavailable: %@";
+
+"button.cancel" = "Cancel";
+
+"button.save" = "Save";
+
+"templates.noExtension" = "No extension";
+
+"templates.edit" = "Edit Template";
+
+"templates.duplicate" = "Duplicate Template";
+
+"templates.newName" = "New Template";
+
+"templates.untitled" = "Untitled";
+
+"templates.newTitle" = "New File Template";
+
+"templates.editTitle" = "Edit File Template";
+
+"templates.displayName" = "Display name";
+
+"templates.basename" = "Default filename (without extension)";
+
+"templates.extensionOptional" = "Extension (optional)";
+
+"templates.filenamePreview" = "Filename preview";
+
+"templates.contents" = "File contents";
+
+"templates.validation.emptyDisplayName" = "Enter a template name.";
+
+"templates.validation.emptyBasename" = "Enter a default filename.";
+
+"templates.validation.invalidDisplayName" = "The template name cannot be . or .., or contain /, :, line breaks, or control characters.";
+
+"templates.validation.invalidBasename" = "The filename cannot be . or .., or contain /, :, line breaks, or control characters.";
+
+"templates.validation.invalidExtension" = "Enter an extension without /, :, line breaks, or control characters, or leave it empty.";
+
+"templates.targetNotDirectory" = "The destination is not a folder: %@";
+
+"guide.title" = "Choose the tools you want to use";
+
+"guide.description" = "Enable a feature, complete its setup, then try it. Permission status and trial results are shown separately.";
+
+"guide.diagnostics" = "All permissions and detailed diagnostics";
+
+"guide.feature.finderTools" = "Finder Tools";
+
+"guide.feature.finderCut" = "Finder Cut";
+
+"guide.feature.screenshot" = "Screenshots";
+
+"guide.purpose.finderTools" = "Create files and use context-menu tools. Requires the Finder extension and access to the folders you use. Screen Recording is not required.";
+
+"guide.purpose.finderCut" = "Move files with your cut shortcut and ⌘V. Requires the background service and Accessibility permission.";
+
+"guide.purpose.screenshot" = "Select and annotate a screenshot. Requires the background service and Screen Recording permission.";
+
+"guide.readiness.available" = "Available";
+
+"guide.readiness.needsPermission" = "Setup required";
+
+"guide.readiness.restartRequired" = "Restart required";
+
+"guide.readiness.failed" = "Needs attention";
+
+"guide.disabled" = "Not enabled";
+
+"guide.configure" = "Set Up";
+
+"guide.try" = "Try Feature";
+
+"guide.trial.notTested" = "Not tested";
+
+"guide.trial.instructions" = "Follow the instructions";
+
+"guide.trial.awaitingConfirmation" = "Awaiting your confirmation";
+
+"guide.trial.passed" = "Trial passed";
+
+"guide.trial.failed" = "Trial failed";
+
+"guide.trial.cancelled" = "Trial cancelled";
+
+"guide.chooseFolder" = "Choose Trial Folder";
+
+"guide.finderInstructions" = "In “%@”, right-click a file or blank area and try an enabled ClickMate menu command. Return here to confirm the result.";
+
+"guide.cutInstructions" = "Only the disposable ClickMate-Test.txt file is used. With it selected in Finder, press %@, open Destination below, then press ⌘V. Return here to confirm; no existing files are moved.";
+
+"guide.openDestination" = "Open Test Destination";
+
+"guide.cutNotMoved" = "The test file was not found at Destination, or the original still exists. Try again using the disposable test file.";
+
+"guide.screenshotInstructions" = "The background service will open region capture. Select a region and finish the screenshot, then return here to confirm what happened. Press Esc to cancel and choose “Cancelled”.";
+
+"guide.screenshotUnavailable" = "The background service did not acknowledge the trial. Check the service and Screen Recording permission, then try again.";
+
+"guide.shortcutFailure" = "Check the shortcut in Quick Features: it conflicts with another shortcut or could not be registered.";
+
+"guide.confirmPassed" = "It Worked";
+
+"guide.confirmFailed" = "It Failed";
+
+"guide.confirmCancelled" = "Cancelled";
+
+"settingsData.applicationCount" = "Pinned applications";
+
+"settingsData.cancel" = "Cancel";
+
+"settingsData.chooseImport" = "Choose Settings File…";
+
+"settingsData.close" = "Close";
+
+"settingsData.confirmImportDescription" = "Replace all portable settings with this file? Your current settings will be backed up first. System permissions and local service settings are retained.";
+
+"settingsData.confirmImportTitle" = "Replace Settings?";
+
+"settingsData.confirmResetDescription" = "Restore all default settings? A valid current configuration is backed up, and a corrupt original is preserved separately.";
+
+"settingsData.confirmRestoreDescription" = "Replace current settings with the last valid backup? A corrupt original is preserved separately.";
+
+"settingsData.corrupt" = "Settings need recovery";
+
+"settingsData.corruptDescription" = "The settings file could not be decoded. Recover a backup or explicitly reset before saving changes.";
+
+"settingsData.description" = "Back up your preferences, move settings between Macs, or recover a damaged configuration.";
+
+"settingsData.export" = "Export Settings…";
+
+"settingsData.exported" = "Settings exported successfully.";
+
+"settingsData.failed" = "Settings Operation Failed";
+
+"settingsData.firstRun" = "Default settings saved";
+
+"settingsData.folderCount" = "Folders";
+
+"settingsData.hotkeyCount" = "Enabled quick features";
+
+"settingsData.invalidPath" = "The file contains an invalid folder or application path. Use absolute paths and .app application paths.";
+
+"settingsData.invalidShortcut" = "The file contains invalid or conflicting keyboard shortcuts.";
+
+"settingsData.invalidTemplate" = "The file contains invalid templates or references to missing templates.";
+
+"settingsData.invalidValues" = "The file contains inconsistent menu or application settings.";
+
+"settingsData.loaded" = "Settings saved";
+
+"settingsData.manage" = "Settings Data";
+
+"settingsData.menuCount" = "Enabled commands";
+
+"settingsData.previewDescription" = "Current → Imported. Import replaces menus, templates, quick features, screenshots, language, and application/folder paths.";
+
+"settingsData.previewTitle" = "Import Preview: %@";
+
+"settingsData.readOnly" = "This settings store is read-only.";
+
+"settingsData.reauthorizeDescription" = "%d imported folder(s) need local authorization. Permissions are not transferred.";
+
+"settingsData.recoveryDescription" = "The most recent valid configuration is backed up before each save. Corrupt originals are retained when you reset or recover.";
+
+"settingsData.recoveryRequired" = "Recover a backup or explicitly reset the damaged settings before importing, exporting, or saving changes.";
+
+"settingsData.replace" = "Replace Settings";
+
+"settingsData.reset" = "Reset to Defaults…";
+
+"settingsData.restoreBackup" = "Restore Backup…";
+
+"settingsData.retry" = "Retry Save";
+
+"settingsData.saveFailed" = "Settings could not be saved";
+
+"settingsData.templateCount" = "Templates";
+
+"settingsData.title" = "Settings Data";
+
+"settingsData.transferDescription" = "Exports include menu settings, templates, shortcuts, screenshots, language, and paths. Security bookmarks, system permissions, and local service state stay on this Mac.";
+
+"settingsData.transferTitle" = "Import and Export";
+
+"settingsData.unsupportedVersion" = "This settings file uses an unsupported format version.";
+
+"guide.trialFilesRetained" = "Files you added or changed were preserved at %@.";

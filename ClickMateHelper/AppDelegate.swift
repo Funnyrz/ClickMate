@@ -121,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         case .refreshStatus:
             refreshPermissionsAndPublish()
+        case .testScreenshot:
+            quickFeatureCoordinator.testScreenshot()
         case let .beginShortcutRecording(sessionID):
             guard !command.isShortcutRecordingSessionExpired() else { return }
             recordingSessionID = sessionID

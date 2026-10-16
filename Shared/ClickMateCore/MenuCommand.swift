@@ -1,6 +1,6 @@
 import Foundation
 
-enum MenuCommand: String, Codable, CaseIterable, Identifiable {
+enum MenuCommand: String, Codable, CaseIterable, Identifiable, Sendable {
     case newFile
     case copyPOSIXPath
     case copyFileURL

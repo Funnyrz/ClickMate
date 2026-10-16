@@ -7,8 +7,51 @@ struct FileTemplate: Codable, Identifiable, Hashable {
     var defaultBasename: String
     var contents: String
 
+    enum ValidationError: Error, LocalizedError {
+        case emptyDisplayName
+        case emptyBasename
+        case invalidDisplayName
+        case invalidBasename
+        case invalidExtension
+
+        var errorDescription: String? {
+            switch self {
+            case .emptyDisplayName: L10n.string("templates.validation.emptyDisplayName")
+            case .emptyBasename: L10n.string("templates.validation.emptyBasename")
+            case .invalidDisplayName: L10n.string("templates.validation.invalidDisplayName")
+            case .invalidBasename: L10n.string("templates.validation.invalidBasename")
+            case .invalidExtension: L10n.string("templates.validation.invalidExtension")
+            }
+        }
+    }
+
     var localizedDisplayName: String {
-        L10n.string("template.\(id)", fallback: displayName)
+        guard Self.defaults.contains(where: { $0.id == id && $0.displayName == displayName }) else { return displayName }
+        return L10n.string("template.\(id)", fallback: displayName)
+    }
+
+    var validationError: ValidationError? {
+        if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .emptyDisplayName }
+        if Self.isInvalidName(displayName) { return .invalidDisplayName }
+        if defaultBasename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .emptyBasename }
+        if Self.isInvalidName(defaultBasename) { return .invalidBasename }
+        if !fileExtension.isEmpty && (fileExtension.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || fileExtension.trimmingCharacters(in: CharacterSet(charactersIn: ".")).isEmpty || Self.isInvalidName(fileExtension)) {
+            return .invalidExtension
+        }
+        return nil
+    }
+
+    func duplicated() -> FileTemplate {
+        var duplicate = self
+        duplicate.id = "custom-\(UUID().uuidString)"
+        duplicate.displayName = localizedDisplayName
+        return duplicate
+    }
+
+    private static func isInvalidName(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prohibited = CharacterSet.controlCharacters.union(.newlines).union(CharacterSet(charactersIn: "/:"))
+        return trimmed == "." || trimmed == ".." || value.rangeOfCharacter(from: prohibited) != nil
     }
 
     var filename: String {

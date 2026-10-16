@@ -176,6 +176,10 @@ final class QuickFeatureCoordinator {
         }
     }
 
+    func testScreenshot() {
+        captureScreenshot()
+    }
+
     private func captureScreenshot() {
         if ScreenshotCoordinator.shared.state == .previewing {
             ScreenshotCoordinator.shared.bringPreviewToFront()

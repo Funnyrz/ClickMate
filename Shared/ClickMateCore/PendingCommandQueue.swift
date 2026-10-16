@@ -8,6 +8,7 @@ struct PendingCommand: Codable, Equatable, Identifiable {
         case openHere
         case openApplication
         case compress
+        case batchFileAction
         case editArchive
         case toggleHiddenFiles
     }
@@ -142,6 +143,19 @@ struct PendingCommand: Codable, Equatable, Identifiable {
         )
     }
 
+    static func batchFileAction(command: MenuCommand, urls: [URL]) -> PendingCommand {
+        PendingCommand(
+            id: UUID(),
+            kind: .batchFileAction,
+            templateID: nil,
+            directoryURL: nil,
+            urls: urls,
+            hashAlgorithm: nil,
+            menuCommand: command,
+            applicationPath: nil
+        )
+    }
+
     static func editArchive(url: URL) -> PendingCommand {
         PendingCommand(
             id: UUID(),
@@ -187,18 +201,36 @@ enum PendingCommandQueue {
     }
 
     static func drain() -> [PendingCommand] {
-        let fileManager = FileManager.default
-        let commands = pendingCommandFileURLs()
+        drain(
+            directoryURL: queueDirectoryURL,
+            claim: { try FileManager.default.moveItem(at: $0, to: $1) },
+            cleanup: { try FileManager.default.removeItem(at: $0) }
+        )
+    }
+
+    /// Claims are renamed on the same volume before decoding. Claimed files are
+    /// intentionally never retried: a failed cleanup must not repeat a file action.
+    static func drain(
+        directoryURL: URL,
+        claim: (URL, URL) throws -> Void,
+        cleanup: (URL) throws -> Void
+    ) -> [PendingCommand] {
+        pendingCommandFileURLs(in: directoryURL)
             .compactMap { url -> PendingCommand? in
-                guard let data = try? Data(contentsOf: url),
+                let claimedURL = url.deletingPathExtension().appendingPathExtension("claimed")
+                do {
+                    try claim(url, claimedURL)
+                } catch {
+                    return nil
+                }
+                defer { try? cleanup(claimedURL) }
+                guard let data = try? Data(contentsOf: claimedURL),
                       let command = try? JSONDecoder().decode(PendingCommand.self, from: data)
                 else {
                     return nil
                 }
-                try? fileManager.removeItem(at: url)
                 return command
             }
-        return commands
     }
 
     static func hasPendingCommands() -> Bool {
@@ -223,8 +255,12 @@ enum PendingCommandQueue {
     }
 
     private static func pendingCommandFileURLs() -> [URL] {
+        pendingCommandFileURLs(in: queueDirectoryURL)
+    }
+
+    private static func pendingCommandFileURLs(in directoryURL: URL) -> [URL] {
         guard let fileURLs = try? FileManager.default.contentsOfDirectory(
-            at: queueDirectoryURL,
+            at: directoryURL,
             includingPropertiesForKeys: nil
         ) else {
             return []

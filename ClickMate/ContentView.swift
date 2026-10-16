@@ -5,9 +5,26 @@ struct ContentView: View {
     @EnvironmentObject private var store: PreferencesStore
     @EnvironmentObject private var updateCoordinator: UpdateCheckCoordinator
     @State private var selectedTab: SettingsTab = .menus
+    @State private var showsSettingsData = false
 
     var body: some View {
         VStack(spacing: 10) {
+            if let message = store.storageState.message {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L10n.string(store.storageState.isCorrupt ? "settingsData.corrupt" : "settingsData.saveFailed")).font(.headline)
+                        Text(message).font(.caption).lineLimit(2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !store.storageState.isCorrupt {
+                        Button(L10n.string("settingsData.retry")) { store.retrySave() }
+                    }
+                    Button(L10n.string("settingsData.manage")) { showsSettingsData = true }
+                }
+                .padding(10)
+                .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
             TabView(selection: $selectedTab) {
                 MenusView()
                     .tabItem { Label(L10n.string("tab.menus"), systemImage: "list.bullet.rectangle") }
@@ -28,26 +45,20 @@ struct ContentView: View {
                     .tabItem { Label(L10n.string("tab.permissions"), systemImage: "checkmark.shield") }
                     .tag(SettingsTab.permissions)
             }
+            .disabled(store.storageState.isCorrupt)
 
             updateFooter
         }
         .padding()
+        .background(SettingsWindowMarker())
         .id(store.preferences.language)
         .onAppear {
             if !store.preferences.hasDismissedPermissionGuide {
                 selectedTab = .permissions
             }
-            refreshPermissionStatusesIfNeeded(for: selectedTab)
-        }
-        .onChange(of: selectedTab) { _, tab in
-            refreshPermissionStatusesIfNeeded(for: tab)
         }
         .alert(item: manualResultBinding, content: updateAlert)
-    }
-
-    private func refreshPermissionStatusesIfNeeded(for tab: SettingsTab) {
-        guard tab == .permissions || tab == .quickFeatures else { return }
-        QuickFeatureHelperService.shared.refreshAllStatuses()
+        .sheet(isPresented: $showsSettingsData) { SettingsDataView().environmentObject(store) }
     }
 
     private var updateFooter: some View {
@@ -58,6 +69,11 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+
+            Button(L10n.string("settingsData.manage")) { showsSettingsData = true }
+                .buttonStyle(.link)
+            Button(L10n.string("tasks.title")) { FileTaskCenter.shared.show() }
+                .buttonStyle(.link)
 
             Spacer(minLength: 8)
 
