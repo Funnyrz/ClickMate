@@ -18,7 +18,9 @@ def check():
     for filename, language in [("README.md", "en"), ("README.zh-CN.md", "zh-CN")]:
         text = (ROOT / filename).read_text()
         images = re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", text)
-        expected = [f"img/clickmate-{scene}-{language}.png" for scene in SCENES]
+        expected = [f"img/product-overview-{language}.png"] + [
+            f"img/clickmate-{scene}-{language}.png" for scene in SCENES
+        ]
         assert [target for _, target in images] == expected, f"{filename}: image order / language mismatch"
         assert all(label.strip() for label, _ in images), f"{filename}: missing image descriptions"
         assert text.count("<details>") == text.count("</details>") == 9, f"{filename}: disclosure mismatch"
@@ -43,11 +45,12 @@ def check():
             assert 320 <= width <= 2600 and 200 <= height <= 4000, f"{image}: unexpected dimensions"
         documents.append({"file": filename, "images": len(images), "heading_levels": heading_levels, "disclosures": 9})
     assert documents[0]["heading_levels"] == documents[1]["heading_levels"], "README heading structure mismatch"
-    report = {"passed": True, "documents": documents, "expected_images": 24}
+    expected_images = len(documents) * (len(SCENES) + 1)
+    report = {"passed": True, "documents": documents, "expected_images": expected_images}
     destination = ROOT / "build/documentation/readme-validation.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n")
-    print("Both READMEs passed: 24 matching images, local links, headings, disclosures, and code fences.")
+    print(f"Both READMEs passed: {expected_images} matching images, local links, headings, disclosures, and code fences.")
 
 
 if __name__ == "__main__":

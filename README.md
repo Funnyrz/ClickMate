@@ -2,6 +2,10 @@
 
 [简体中文](README.zh-CN.md) · [Download the latest release](https://github.com/Funnyrz/ClickMate/releases/latest) · [MIT License](LICENSE)
 
+![ClickMate feature overview: Finder tools, file creation, hashes, archives, screenshots, and customization](img/product-overview-en.png)
+
+*Feature overview illustration. See the screenshots and descriptions below for the current interface and supported actions.*
+
 ClickMate brings everyday file tools to Finder: create files from templates, copy paths, open folders in your editor, compress selections, and edit text inside ZIP/JAR archives. Finder Cut and screenshot tools add customizable global shortcuts, with native interfaces built using SwiftUI and AppKit.
 
 **Requires macOS 14 or later.** Release packages support Apple silicon and Intel Macs. Xcode is only needed to build from source.

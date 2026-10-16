@@ -2,6 +2,10 @@
 
 [English](README.md) · [下载最新版本](https://github.com/Funnyrz/ClickMate/releases/latest) · [MIT 许可证](LICENSE)
 
+![ClickMate 功能概览：Finder 工具、新建文件、文件哈希、压缩包、截图与自定义配置](img/product-overview-zh-CN.png)
+
+*功能概览示意图。当前界面及支持的操作详见下方截图与说明。*
+
 ClickMate（右键大师）将常用文件工具带入 Finder：从模板新建文件、复制路径、在编辑器中打开文件夹、压缩所选项目，以及编辑 ZIP/JAR 内的文本。访达剪切与截图工具支持自定义全局快捷键，界面使用 SwiftUI 和 AppKit 原生构建。
 
 **需要 macOS 14 或更高版本。** 正式安装包支持 Apple 芯片和 Intel Mac；只有从源码构建时才需要 Xcode。
