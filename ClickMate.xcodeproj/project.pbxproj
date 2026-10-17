@@ -183,6 +183,11 @@
 		EC696C69EC88907EB8DECB35 /* DocumentationScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90734A20679E6A1D0044BCB2 /* DocumentationScreenshotTests.swift */; };
 		7BD0E620D742D22ACAE06AC7 /* FinderSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* FinderSync.swift */; };
 		936648EF1379775E96B932C0 /* FinderMenuDocumentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D51FEFE542664F8F77B739 /* FinderMenuDocumentationTests.swift */; };
+		DFA000000000000000000001 /* DirectoryAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA000000000000000000005 /* DirectoryAccess.swift */; };
+		DFA000000000000000000002 /* DirectoryAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA000000000000000000005 /* DirectoryAccess.swift */; };
+		DFA000000000000000000003 /* DirectoryAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA000000000000000000005 /* DirectoryAccess.swift */; };
+		DFA000000000000000000004 /* DirectoryAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA000000000000000000005 /* DirectoryAccess.swift */; };
+		DFA000000000000000000006 /* DirectoryAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFA000000000000000000007 /* DirectoryAccessTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -341,6 +346,8 @@
 		57CF3E2E9D0C365178C47575 /* Views/AppsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AppsView.swift; sourceTree = "<group>"; };
 		90734A20679E6A1D0044BCB2 /* DocumentationScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentationScreenshotTests.swift; sourceTree = "<group>"; };
 		E0D51FEFE542664F8F77B739 /* FinderMenuDocumentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderMenuDocumentationTests.swift; sourceTree = "<group>"; };
+		DFA000000000000000000005 /* DirectoryAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryAccess.swift; sourceTree = "<group>"; };
+		DFA000000000000000000007 /* DirectoryAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryAccessTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -471,6 +478,7 @@
 				200000000000000000000009 /* FileTemplate.swift */,
 				20000000000000000000000A /* MenuCommand.swift */,
 				20000000000000000000000B /* ClickMatePreferences.swift */,
+				DFA000000000000000000005 /* DirectoryAccess.swift */,
 				200000000000000000000032 /* QuickFeatures.swift */,
 				20000000000000000000000C /* PathFormatter.swift */,
 				20000000000000000000000D /* FileCreator.swift */,
@@ -501,6 +509,7 @@
 				A8CA1544E35433F6E19B87B9 /* FileTemplateEditingTests.swift */,
 				301E8BE202B8BCA5A5B8F79D /* PendingCommandConsumptionTests.swift */,
 				28FF79E13F396D5967C92064 /* FileTaskCenterTests.swift */,
+				DFA000000000000000000007 /* DirectoryAccessTests.swift */,
 				0F882D529BCB3109FF0CB20F /* LongScreenshotFailureTests.swift */,
 				2232E21533F39C9DF3420412 /* BatchFileOperationTests.swift */,
 				A9D867AB8D93838D4E5CDFF5 /* BatchRoutingTests.swift */,
@@ -616,19 +625,28 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
-				600000000000000000000001 = {
+					600000000000000000000001 = {
 						CreatedOnToolsVersion = 26.6;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = { enabled = 1; };
+						};
 					};
 					600000000000000000000002 = {
 						CreatedOnToolsVersion = 26.6;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = { enabled = 1; };
+						};
 					};
-				600000000000000000000003 = {
+					600000000000000000000003 = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 600000000000000000000001;
 					};
-				};
-				D1B2C3D4E5F60708090A0001 = {
-					CreatedOnToolsVersion = 26.6;
+					D1B2C3D4E5F60708090A0001 = {
+						CreatedOnToolsVersion = 26.6;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = 700000000000000000000004 /* Build configuration list for PBXProject "ClickMate" */;
@@ -689,6 +707,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DFA000000000000000000001 /* DirectoryAccess.swift in Sources */,
 				7EBB423E0A8BC6CC46892688 /* Services/AppWindows.swift in Sources */,
 				16E98B5A5786717FA2FC5848 /* Services/AppPreferences.swift in Sources */,
 				0A0E59C38C7996C131671C49 /* Services/FeatureReadiness.swift in Sources */,
@@ -746,6 +765,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DFA000000000000000000002 /* DirectoryAccess.swift in Sources */,
 				BD8C1C3FCA630AAE1C6F7CCE /* FinderMenuContext.swift in Sources */,
 				100000000000000000000012 /* FinderSync.swift in Sources */,
 				100000000000000000000013 /* AppConstants.swift in Sources */,
@@ -771,6 +791,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DFA000000000000000000003 /* DirectoryAccess.swift in Sources */,
+				DFA000000000000000000006 /* DirectoryAccessTests.swift in Sources */,
 				936648EF1379775E96B932C0 /* FinderMenuDocumentationTests.swift in Sources */,
 				7BD0E620D742D22ACAE06AC7 /* FinderSync.swift in Sources */,
 				EC696C69EC88907EB8DECB35 /* DocumentationScreenshotTests.swift in Sources */,
@@ -848,6 +870,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DFA000000000000000000004 /* DirectoryAccess.swift in Sources */,
 				5E4140327A12444F0D3BCAA6 /* Services/LongScreenshotFailureState.swift in Sources */,
 				A1B2C3D4E5F60708090A0001 /* AppDelegate.swift in Sources */,
 				A1B2C3D4E5F60708090A0002 /* AppConstants.swift in Sources */,
@@ -944,8 +967,8 @@
 		800000000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLICKMATE_BUILD_VERSION = 10;
-				CLICKMATE_MARKETING_VERSION = 1.3.5;
+				CLICKMATE_BUILD_VERSION = 12;
+				CLICKMATE_MARKETING_VERSION = 1.3.6;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -1006,8 +1029,8 @@
 		800000000000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLICKMATE_BUILD_VERSION = 10;
-				CLICKMATE_MARKETING_VERSION = 1.3.5;
+				CLICKMATE_BUILD_VERSION = 12;
+				CLICKMATE_MARKETING_VERSION = 1.3.6;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_COVERAGE_MAPPING = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1063,8 +1086,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClickMate/ClickMate.entitlements;
+				REGISTER_APP_GROUPS = YES;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1086,8 +1110,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClickMate/ClickMate.entitlements;
+				REGISTER_APP_GROUPS = YES;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1110,7 +1135,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClickMateHelper/ClickMateHelper.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1133,7 +1158,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClickMateHelper/ClickMateHelper.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1156,6 +1181,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = ClickMateFinderExtension/ClickMateFinderExtension.entitlements;
+				REGISTER_APP_GROUPS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1178,6 +1204,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = ClickMateFinderExtension/ClickMateFinderExtension.entitlements;
+				REGISTER_APP_GROUPS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;

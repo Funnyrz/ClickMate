@@ -2,6 +2,26 @@ import XCTest
 
 @MainActor
 final class SettingsLocalizationTests: XCTestCase {
+    func testPermissionDiagnosticsUseHumanReadableTextInBothLanguages() {
+        let keys = [
+            "permissions.temporarySignatureWarning", "permissions.fullDiskAccessManualVerificationStatus",
+            "permissions.fullDiskAccessManualVerificationDetail", "permissions.sharedChannelAvailable",
+            "permissions.sharedChannelUnavailable", "permissions.monitoredCoverage",
+            "permissions.monitoredCoverageUnknown", "permissions.configurationUpdated", "permissions.lastMenuRequest",
+            "permissions.bookmarkUnavailable", "permissions.customFolderSyncUnavailable",
+            "permissions.directoryAccessDetails", "permissions.directoryAccessSucceeded",
+            "permissions.directoryAccessDenied", "permissions.directoryAccessFailed",
+            "permissions.directoryAccessUnverified", "guide.finderDefaultInstructions"
+        ]
+        for language in [AppLanguage.english, .simplifiedChinese] {
+            for key in keys {
+                XCTAssertNotEqual(L10n.string(key, language: language), key, "Missing \(language) text: \(key)")
+            }
+        }
+        XCTAssertEqual(L10n.string("permissions.fullDiskAccessApplied", language: .english), "Processes refreshed · access unverified")
+        XCTAssertEqual(L10n.string("permissions.fullDiskAccessApplied", language: .simplifiedChinese), "进程已刷新 · 权限未验证")
+    }
+
     func testLocalizedLabelsUseLoadedPreferencesWithoutReadingTheSettingsFile() throws {
         let url = try settingsURL()
         var preferences = ClickMatePreferences.defaults
@@ -17,6 +37,28 @@ final class SettingsLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("tab.permissions"), "权限")
         store.replaceLoadedPreferences(preferences)
         XCTAssertEqual(L10n.string("tab.permissions"), "Permissions")
+    }
+
+    func testFolderSyncInstructionsDoNotRequireDeveloperSigningOrClaimFinderAppliedChanges() {
+        let keys = [
+            "permissions.chooseRedirectedFolders", "permissions.redirectedFoldersDescription",
+            "permissions.folderSyncRequested", "permissions.folderSyncFailed",
+            "permissions.sharedContainerUnavailable", "permissions.customFolderSyncUnavailable",
+            "guide.finderDefaultInstructions"
+        ]
+        for language in [AppLanguage.english, .simplifiedChinese] {
+            for key in keys {
+                let text = L10n.string(key, language: language)
+                XCTAssertNotEqual(text, key)
+                XCTAssertFalse(text.contains("Developer ID"))
+                XCTAssertFalse(text.contains("Apple Development"))
+                XCTAssertFalse(text.contains("描述文件"))
+            }
+        }
+        XCTAssertTrue(L10n.string("permissions.folderSyncRequested", language: .english).contains("not yet verified"))
+        XCTAssertTrue(L10n.string("permissions.folderSyncRequested", language: .simplifiedChinese).contains("尚未验证"))
+        XCTAssertTrue(L10n.string("permissions.redirectedFoldersDescription", language: .english).contains("not the entire disk"))
+        XCTAssertTrue(L10n.string("permissions.redirectedFoldersDescription", language: .simplifiedChinese).contains("不要选择整个磁盘"))
     }
 
     func testLocalizedLabelsReflectLanguageBeforeAnAsynchronousSaveCompletes() throws {

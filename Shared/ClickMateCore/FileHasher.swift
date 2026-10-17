@@ -21,6 +21,7 @@ enum FileHasher {
         let source: URL
         let hash: String?
         let error: String?
+        var accessFailure: FileAccessFailure? = nil
 
         var succeeded: Bool { hash != nil && error == nil }
 
@@ -88,7 +89,7 @@ enum FileHasher {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                items.append(HashItemResult(source: url, hash: nil, error: error.localizedDescription))
+                items.append(HashItemResult(source: url, hash: nil, error: error.localizedDescription, accessFailure: FileAccessFailure(error)))
             }
         }
         try checkCancellation(isCancelled)

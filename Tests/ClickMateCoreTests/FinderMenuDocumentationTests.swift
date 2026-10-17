@@ -7,6 +7,77 @@ import XCTest
 /// registering observers, or dispatching any file operation.
 @MainActor
 final class FinderMenuDocumentationTests: XCTestCase {
+    func testProxyMenuItemRecoversHashActionAndSnapshotWithoutRepresentedObject() throws {
+        let directory = try menuFixtureDirectory()
+        let file = directory.appendingPathComponent("Selected.txt")
+        try Data("selection".utf8).write(to: file)
+        let finder = FinderSync(documentationStore: demoStore(in: directory, language: .english))
+        let menu = finder.documentationMenu(context: FinderMenuContext(
+            kind: .items, selectedURLs: [file], targetedURL: directory
+        ))
+        let original = try XCTUnwrap(menuItem(in: menu, title: MenuCommand.md5.title))
+        let proxy = proxyItem(for: original)
+
+        let action = try XCTUnwrap(finder.documentationAction(
+            for: proxy, currentSelectedURLs: [file], currentTargetedURL: directory
+        ))
+
+        XCTAssertNil(proxy.representedObject)
+        XCTAssertEqual(action.token, .command(.md5))
+        XCTAssertEqual(action.context.selectedURLs, [file])
+        XCTAssertEqual(action.context.targetedURL, directory)
+    }
+
+    func testProxyMenuItemRecoversNewFileActionWithoutRepresentedObject() throws {
+        let directory = try menuFixtureDirectory()
+        let finder = FinderSync(documentationStore: demoStore(in: directory, language: .english))
+        let menu = finder.documentationMenu(context: FinderMenuContext(
+            kind: .container, selectedURLs: [], targetedURL: directory
+        ))
+        let submenu = try XCTUnwrap(menu.items.first { $0.title == MenuCommandGroup.newFile.title }?.submenu)
+        let original = try XCTUnwrap(submenu.items.first { $0.tag > 0 })
+
+        let action = try XCTUnwrap(finder.documentationAction(
+            for: proxyItem(for: original), currentSelectedURLs: [], currentTargetedURL: directory
+        ))
+
+        XCTAssertEqual(action.token, .template(FileTemplate.defaults[0].id))
+        XCTAssertEqual(action.context.destinationDirectory, directory)
+    }
+
+    func testMenuRebuildExpiresOldTagsWithoutReusingThem() throws {
+        let directory = try menuFixtureDirectory()
+        let file = directory.appendingPathComponent("Selected.txt")
+        try Data().write(to: file)
+        let finder = FinderSync(documentationStore: demoStore(in: directory, language: .english))
+        let context = FinderMenuContext(kind: .items, selectedURLs: [file], targetedURL: directory)
+        let previous = try XCTUnwrap(menuItem(in: finder.documentationMenu(context: context), title: MenuCommand.md5.title))
+        let current = try XCTUnwrap(menuItem(in: finder.documentationMenu(context: context), title: MenuCommand.md5.title))
+
+        XCTAssertGreaterThan(current.tag, previous.tag)
+        XCTAssertNil(finder.documentationAction(for: previous, currentSelectedURLs: [file], currentTargetedURL: directory))
+        XCTAssertNil(finder.documentationAction(for: proxyItem(for: previous), currentSelectedURLs: [file], currentTargetedURL: directory))
+        XCTAssertNotNil(finder.documentationAction(for: proxyItem(for: current), currentSelectedURLs: [file], currentTargetedURL: directory))
+    }
+
+    func testProxyMenuItemRejectsUnknownTagAndChangedFinderSelection() throws {
+        let directory = try menuFixtureDirectory()
+        let file = directory.appendingPathComponent("Selected.txt")
+        let changed = directory.appendingPathComponent("Changed.txt")
+        try Data().write(to: file)
+        try Data().write(to: changed)
+        let finder = FinderSync(documentationStore: demoStore(in: directory, language: .english))
+        let menu = finder.documentationMenu(context: FinderMenuContext(
+            kind: .items, selectedURLs: [file], targetedURL: directory
+        ))
+        let original = try XCTUnwrap(menuItem(in: menu, title: MenuCommand.md5.title))
+        let unknown = proxyItem(for: original)
+        unknown.tag = Int.max
+
+        XCTAssertNil(finder.documentationAction(for: unknown, currentSelectedURLs: [file], currentTargetedURL: directory))
+        XCTAssertNil(finder.documentationAction(for: proxyItem(for: original), currentSelectedURLs: [changed], currentTargetedURL: directory))
+    }
+
     func testDocumentationMenuKeepsProductionSelectionRules() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("clickmate-menu-tests-\(UUID().uuidString)", isDirectory: true)
@@ -80,6 +151,28 @@ final class FinderMenuDocumentationTests: XCTestCase {
         preferences.detectedApplicationOrder = ["com.apple.Terminal"]
         store.replaceLoadedPreferences(preferences)
         return store
+    }
+
+    private func menuFixtureDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clickmate-action-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory
+    }
+
+    private func proxyItem(for original: NSMenuItem) -> NSMenuItem {
+        let proxy = NSMenuItem(title: original.title, action: original.action, keyEquivalent: "")
+        proxy.tag = original.tag
+        return proxy
+    }
+
+    private func menuItem(in menu: NSMenu, title: String) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title { return item }
+            if let submenu = item.submenu, let found = menuItem(in: submenu, title: title) { return found }
+        }
+        return nil
     }
 
     private func captureNativeMenu(_ menu: NSMenu, opening item: NSMenuItem) throws -> Data {

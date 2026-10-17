@@ -389,6 +389,164 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertTrue(urls.contains(home.appendingPathComponent("Downloads", isDirectory: true)))
     }
 
+    func testBootstrapRegistersSafeDefaultsWithoutReadingHomeOrCheckingReachability() {
+        let home = URL(fileURLWithPath: "/Users/No Access Or First Install", isDirectory: true)
+        let urls = Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap(homeDirectory: home))
+
+        XCTAssertTrue(urls.contains(home.appendingPathComponent("Desktop", isDirectory: true)))
+        XCTAssertTrue(urls.contains(home.appendingPathComponent("Downloads", isDirectory: true)))
+        XCTAssertFalse(urls.contains(home))
+        XCTAssertFalse(urls.contains(home.appendingPathComponent("Library", isDirectory: true)))
+    }
+
+    func testBootstrapExcludesDefaultSymlinksIntoLibrarySystemRootAndExternalVolumes() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let library = home.appendingPathComponent("Library", isDirectory: true)
+        let projects = home.appendingPathComponent("Projects", isDirectory: true)
+        let downloads = home.appendingPathComponent("Downloads", isDirectory: true)
+        let workspace = home.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: projects, withDestinationURL: library)
+        try FileManager.default.createSymbolicLink(at: downloads, withDestinationURL: URL(fileURLWithPath: "/", isDirectory: true))
+        try FileManager.default.createSymbolicLink(at: workspace, withDestinationURL: URL(fileURLWithPath: "/Volumes/External", isDirectory: true))
+
+        let urls = Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap(homeDirectory: home))
+        let canonicalPaths = Set(urls.map(MonitoredFolderPolicy.canonicalPath))
+
+        XCTAssertFalse(urls.contains(projects))
+        XCTAssertFalse(urls.contains(downloads))
+        XCTAssertFalse(urls.contains(workspace))
+        XCTAssertFalse(canonicalPaths.contains(MonitoredFolderPolicy.canonicalPath(for: library)))
+        XCTAssertFalse(canonicalPaths.contains("/"))
+        XCTAssertFalse(canonicalPaths.contains("/Volumes/External"))
+        XCTAssertTrue(urls.contains(home.appendingPathComponent("Desktop", isDirectory: true)))
+    }
+
+    func testBootstrapExcludesHomeAndSymlinkLoopsButKeepsSafeRelativeSymlink() throws {
+        let home = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let projects = home.appendingPathComponent("Projects", isDirectory: true)
+        let downloads = home.appendingPathComponent("Downloads", isDirectory: true)
+        let workspace = home.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createSymbolicLink(atPath: projects.path, withDestinationPath: ".")
+        try FileManager.default.createSymbolicLink(atPath: downloads.path, withDestinationPath: "Downloads")
+        try FileManager.default.createSymbolicLink(atPath: workspace.path, withDestinationPath: "Safe/Projects")
+
+        let urls = Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap(homeDirectory: home))
+
+        XCTAssertFalse(urls.contains(projects))
+        XCTAssertFalse(urls.contains(downloads))
+        XCTAssertTrue(urls.contains(workspace))
+    }
+
+    func testFinderBookmarkAccessStartsBeforeReachabilityAndStopsOnRefreshAndDeinit() {
+        let root = URL(fileURLWithPath: "/Users/example/Selected", isDirectory: true)
+        var preferences = ClickMatePreferences.defaults
+        preferences.monitoredFolderPaths = [root.path]
+        preferences.monitoredFolderBookmarks = [root.path: Data([1])]
+        var events: [String] = []
+        var session: FinderSyncFolderAccess? = FinderSyncFolderAccess(
+            bookmarkAccessProvider: { _ in
+                events.append("start")
+                return SecurityScopedFolderAccess.ScopedAccess(url: root, didStartAccessing: true) { _ in
+                    events.append("stop")
+                }
+            },
+            directoryIsAvailable: { _ in
+                events.append("check")
+                return true
+            }
+        )
+
+        session?.refresh(preferences: preferences)
+        XCTAssertEqual(events, ["start", "check"])
+        XCTAssertEqual(session?.directoryURLs, [root])
+        session?.refresh(preferences: preferences)
+        XCTAssertEqual(events, ["start", "check", "start", "check", "stop"])
+        session = nil
+        XCTAssertEqual(events.last, "stop")
+        XCTAssertEqual(events.filter { $0 == "stop" }.count, 2)
+    }
+
+    func testFinderBookmarkFailureRetainsDefaultsAndReportsFolderForReselection() {
+        let root = URL(fileURLWithPath: "/Users/example/Selected", isDirectory: true)
+        var preferences = ClickMatePreferences.defaults
+        preferences.monitoredFolderPaths = [root.path]
+        preferences.monitoredFolderBookmarks = [root.path: Data([1])]
+        let session = FinderSyncFolderAccess(
+            bookmarkAccessProvider: { _ in nil },
+            directoryIsAvailable: { _ in
+                XCTFail("Must not inspect a directory before acquiring its security scope")
+                return true
+            }
+        )
+
+        session.refresh(preferences: preferences)
+
+        XCTAssertTrue(session.directoryURLs.isEmpty)
+        XCTAssertEqual(session.unavailableBookmarkPaths, [root.path])
+        XCTAssertFalse(MonitoredFolderPolicy.finderSyncDirectoryURLs(for: preferences).isEmpty)
+    }
+
+    func testFinderBookmarkRevocationReleasesPreviousGrantAndReportsUnavailableFolder() {
+        let root = URL(fileURLWithPath: "/Users/example/Selected", isDirectory: true)
+        var preferences = ClickMatePreferences.defaults
+        preferences.monitoredFolderPaths = [root.path]
+        preferences.monitoredFolderBookmarks = [root.path: Data([1])]
+        var grantAvailable = true
+        var stopCount = 0
+        let session = FinderSyncFolderAccess(
+            bookmarkAccessProvider: { _ in
+                guard grantAvailable else { return nil }
+                return SecurityScopedFolderAccess.ScopedAccess(url: root, didStartAccessing: true) { _ in stopCount += 1 }
+            },
+            directoryIsAvailable: { _ in true }
+        )
+        session.refresh(preferences: preferences)
+        grantAvailable = false
+
+        session.refresh(preferences: preferences)
+
+        XCTAssertTrue(session.directoryURLs.isEmpty)
+        XCTAssertEqual(session.unavailableBookmarkPaths, [root.path])
+        XCTAssertEqual(stopCount, 1)
+    }
+
+    func testFinderBookmarkForUnavailableDirectoryIsReleasedImmediately() {
+        let root = URL(fileURLWithPath: "/Volumes/Detached/Selected", isDirectory: true)
+        var preferences = ClickMatePreferences.defaults
+        preferences.monitoredFolderPaths = [root.path]
+        preferences.monitoredFolderBookmarks = [root.path: Data([1])]
+        var stopCount = 0
+        let session = FinderSyncFolderAccess(
+            bookmarkAccessProvider: { _ in
+                SecurityScopedFolderAccess.ScopedAccess(url: root, didStartAccessing: true) { _ in stopCount += 1 }
+            },
+            directoryIsAvailable: { _ in false }
+        )
+
+        session.refresh(preferences: preferences)
+
+        XCTAssertTrue(session.directoryURLs.isEmpty)
+        XCTAssertEqual(session.unavailableBookmarkPaths, [root.path])
+        XCTAssertEqual(stopCount, 1)
+        XCTAssertNil(SecurityScopedFolderAccess.finderSyncScopedAccess(from: Data("invalid bookmark".utf8)))
+    }
+
+    func testFinderMigrationPreservesSavedBookmarkBeforeDirectoryAccessIsAvailable() {
+        let path = "/Users/example/Not Yet Accessible"
+        var preferences = ClickMatePreferences.defaults
+        preferences.finderMonitoringPolicyVersion = 1
+        preferences.monitoredFolderPaths = [path]
+        preferences.monitoredFolderBookmarks = [path: Data([1])]
+
+        XCTAssertTrue(preferences.migrateFinderMonitoringPolicyIfNeeded())
+
+        XCTAssertEqual(preferences.monitoredFolderPaths, [path])
+        XCTAssertEqual(preferences.monitoredFolderBookmarks[path], Data([1]))
+    }
+
     func testSafeTopLevelDirectoriesIncludeProjectsAndWorkspaceWithoutRecursing() throws {
         let home = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -429,6 +587,28 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertFalse(paths.contains(package.path))
         XCTAssertFalse(paths.contains(libraryLink.path))
         XCTAssertFalse(paths.contains(currentUserLibrary.resolvingSymlinksInPath().path))
+    }
+
+    func testSafeTopLevelDiscoveryNeverAddsSymlinkTargetsOutsideHome() throws {
+        let home = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        let ordinary = home.appendingPathComponent("Work", isDirectory: true)
+        let projectLink = home.appendingPathComponent("Projects", isDirectory: true)
+        let discoveredLink = home.appendingPathComponent("Discovered Outside", isDirectory: true)
+        let externalLink = home.appendingPathComponent("Workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: ordinary, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: projectLink, withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: discoveredLink, withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(at: externalLink, withDestinationURL: URL(fileURLWithPath: "/Volumes/External", isDirectory: true))
+
+        let urls = Set(MonitoredFolderPolicy.safeTopLevelDirectoryURLs(in: home))
+        let paths = Set(urls.map(MonitoredFolderPolicy.canonicalPath))
+
+        XCTAssertTrue(paths.contains(MonitoredFolderPolicy.canonicalPath(for: ordinary)))
+        XCTAssertFalse(paths.contains(MonitoredFolderPolicy.canonicalPath(for: outside)))
+        XCTAssertFalse(urls.contains(projectLink))
+        XCTAssertFalse(urls.contains(discoveredLink))
+        XCTAssertFalse(urls.contains(externalLink))
     }
 
     func testSystemPathsAreRejectedFromMonitoring() {
@@ -533,7 +713,10 @@ final class ClickMateCoreTests: XCTestCase {
         let urls = MonitoredFolderPolicy.finderSyncDirectoryURLs(
             for: preferences,
             hasFullDiskAccess: false,
-            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true)
+            volumesRoot: URL(fileURLWithPath: "/definitely-missing-volumes", isDirectory: true),
+            bookmarkAccessProvider: { _ in
+                SecurityScopedFolderAccess.ScopedAccess(url: root, didStartAccessing: true, stopAccessing: { _ in })
+            }
         )
         let paths = Set(urls.map(\.path))
 
@@ -986,6 +1169,17 @@ final class ClickMateCoreTests: XCTestCase {
         )
     }
 
+    func testFinderExtensionStatusMatchesCurrentInstallationAmongDuplicateRegistrations() {
+        let appURL = URL(fileURLWithPath: "/Applications/ClickMate.app", isDirectory: true)
+        let output = """
+        +    com.zxacn.clickmate.FinderExtension(1) /Users/example/Downloads/ClickMate.app/Contents/PlugIns/ClickMateFinderExtension.appex
+        -    com.zxacn.clickmate.FinderExtension(2) /Applications/ClickMate.app/Contents/PlugIns/ClickMateFinderExtension.appex
+        """
+
+        XCTAssertEqual(FinderExtensionPolicy.status(fromPlugInKitOutput: output, appBundleURL: appURL), .disabled)
+        XCTAssertEqual(FinderExtensionPolicy.status(fromPlugInKitOutput: output, appBundleURL: URL(fileURLWithPath: "/Other/ClickMate.app")), .notRegistered)
+    }
+
     func testManualFinderExtensionReloadCompletesFromPlugInKitStatusWithoutRuntimeSnapshot() async throws {
         let appURL = try makeTemporaryDirectory().appendingPathComponent("ClickMate.app", isDirectory: true)
         let extensionURL = appURL
@@ -998,7 +1192,7 @@ final class ClickMateCoreTests: XCTestCase {
         let status = await FinderExtensionPolicy.reloadBundledExtension(appBundleURL: appURL) { _, arguments in
             invocations.append(arguments)
             if arguments.first == "-m" {
-                return (0, "+    com.zxacn.clickmate.FinderExtension(1) /Applications/ClickMate.app")
+                return (0, "+    com.zxacn.clickmate.FinderExtension(1) \(extensionURL.path)")
             }
             return (0, "")
         }
@@ -1007,7 +1201,7 @@ final class ClickMateCoreTests: XCTestCase {
         XCTAssertEqual(invocations, [
             ["-a", extensionURL.path],
             ["-e", "use", "-p", "com.apple.FinderSync", "-i", "com.zxacn.clickmate.FinderExtension"],
-            ["-m", "-p", "com.apple.FinderSync", "-i", "com.zxacn.clickmate.FinderExtension"]
+            ["-m", "-A", "-D", "-v", "-p", "com.apple.FinderSync", "-i", "com.zxacn.clickmate.FinderExtension"]
         ])
     }
 
@@ -1233,7 +1427,11 @@ final class ClickMateCoreTests: XCTestCase {
             updatedAt: updatedAt,
             diskAccessStatus: .unknown,
             lastAccessResult: .permissionDenied,
-            lastAccessAt: updatedAt
+            lastAccessAt: updatedAt,
+            monitoredDirectoryPaths: ["/Users/example/Desktop"],
+            configurationUpdatedAt: updatedAt,
+            lastMenuRequestedAt: updatedAt,
+            unavailableBookmarkPaths: ["/Volumes/Detached"]
         )
 
         XCTAssertTrue(store.write(snapshot))
@@ -1341,6 +1539,10 @@ final class ClickMateCoreTests: XCTestCase {
 
         XCTAssertNil(snapshot.lastAccessResult)
         XCTAssertNil(snapshot.lastAccessAt)
+        XCTAssertNil(snapshot.monitoredDirectoryPaths)
+        XCTAssertNil(snapshot.configurationUpdatedAt)
+        XCTAssertNil(snapshot.lastMenuRequestedAt)
+        XCTAssertNil(snapshot.unavailableBookmarkPaths)
     }
 
     func testFullDiskAccessRecoveryStorePersistsSingleRelaunchAndReload() throws {

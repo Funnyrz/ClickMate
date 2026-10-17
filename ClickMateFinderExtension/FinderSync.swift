@@ -11,6 +11,10 @@ private final class FinderExtensionRuntimeReporter: @unchecked Sendable {
     private let isAvailable = FinderExtensionRuntimeSnapshotStore.isAvailable
     private var lastAccessResult: FinderExtensionAccessResult?
     private var lastAccessAt: Date?
+    private var monitoredDirectoryPaths: [String]?
+    private var configurationUpdatedAt: Date?
+    private var lastMenuRequestedAt: Date?
+    private var unavailableBookmarkPaths: [String]?
 
     func start() {
         guard isAvailable else {
@@ -22,10 +26,23 @@ private final class FinderExtensionRuntimeReporter: @unchecked Sendable {
         }
     }
 
-    func recordConfigurationUpdate() {
+    func recordConfigurationUpdate(directoryURLs: Set<URL>, unavailableBookmarkPaths: [String]) {
         guard isAvailable else { return }
         queue.async { [weak self] in
-            self?.publishSnapshot()
+            guard let self else { return }
+            monitoredDirectoryPaths = directoryURLs.map(\.path).sorted()
+            configurationUpdatedAt = .now
+            self.unavailableBookmarkPaths = unavailableBookmarkPaths
+            publishSnapshot()
+        }
+    }
+
+    func recordMenuRequest() {
+        guard isAvailable else { return }
+        queue.async { [weak self] in
+            guard let self else { return }
+            lastMenuRequestedAt = .now
+            publishSnapshot()
         }
     }
 
@@ -46,7 +63,11 @@ private final class FinderExtensionRuntimeReporter: @unchecked Sendable {
             diskAccessStatus: .unknown,
             monitoringPolicyVersion: FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion,
             lastAccessResult: lastAccessResult,
-            lastAccessAt: lastAccessAt
+            lastAccessAt: lastAccessAt,
+            monitoredDirectoryPaths: monitoredDirectoryPaths,
+            configurationUpdatedAt: configurationUpdatedAt,
+            lastMenuRequestedAt: lastMenuRequestedAt,
+            unavailableBookmarkPaths: unavailableBookmarkPaths
         )
 
         if FinderExtensionRuntimeSnapshotStore.write(snapshot) {
@@ -76,16 +97,30 @@ private final class FinderExtensionRuntimeReporter: @unchecked Sendable {
 }
 
 class FinderSync: FIFinderSync {
+    // The discovery queue transports this weak reference without accessing it.
+    // Its value and all FinderSync state are read only on the main queue.
+    private final class MainQueueReference: @unchecked Sendable {
+        weak var value: FinderSync?
+
+        init(_ value: FinderSync) {
+            self.value = value
+        }
+    }
+
     private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderSync")
     private let menuIconSize = NSSize(width: 16, height: 16)
     private lazy var store = PreferencesStore(allowsWrites: false)
-    private var menuActionTokens: [Int: FinderCommandToken] = [:]
-    private var menuActionTitleTokens: [String: FinderCommandToken] = [:]
+    private var menuActions: [Int: FinderMenuAction] = [:]
     private var menuImageCache: [String: NSImage] = [:]
     private var pendingApplicationIconCacheKeys: Set<String> = []
     private var nextMenuActionTag = 1
     private lazy var runtimeReporter = FinderExtensionRuntimeReporter()
     private lazy var sharedContainerAvailable = ApplicationGroupAccessPolicy.sharedContainerURL() != nil
+    private let monitoredFolderAccess = FinderSyncFolderAccess()
+    private var discoveredDirectoryURLs: Set<URL> = []
+    private var synchronizedDirectoryURLs: Set<URL> = []
+    private var appliedDirectoryURLs: Set<URL>?
+    private var monitoringGeneration = 0
 
 #if DEBUG
     private var documentationAppearance: MenuIconAppearance?
@@ -111,17 +146,33 @@ class FinderSync: FIFinderSync {
     func documentationMenu(context: FinderMenuContext) -> NSMenu {
         configuredMenu(context: context)
     }
+
+    func documentationAction(
+        for item: NSMenuItem,
+        currentSelectedURLs: [URL],
+        currentTargetedURL: URL?
+    ) -> (token: FinderCommandToken, context: FinderMenuContext)? {
+        guard let action = validatedMenuAction(
+            for: item,
+            currentSelectedURLs: currentSelectedURLs,
+            currentTargetedURL: currentTargetedURL
+        ) else { return nil }
+        return (action.token, action.context)
+    }
 #endif
 
     override init() {
         super.init()
+        // Install roots before loading shared preferences, probing user folders,
+        // or looking up applications; all can be unavailable on first launch.
+        applyMonitoredDirectoryURLs(Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap()))
         L10n.languageProvider = { [weak self] in
             self?.store.preferences.language ?? .system
         }
         applyPinnedApplicationFallback()
+        observePreferenceChanges()
         refreshMonitoredDirectoriesFromPreferences()
         preloadApplicationIcons()
-        observePreferenceChanges()
         runtimeReporter.start()
     }
 
@@ -131,6 +182,11 @@ class FinderSync: FIFinderSync {
             Unmanaged.passUnretained(self).toOpaque(),
             CFNotificationName(PreferencesChangeNotifier.name as CFString),
             nil
+        )
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(FinderFolderSyncStore.notificationName as CFString), nil
         )
         CFNotificationCenterRemoveObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
@@ -153,6 +209,7 @@ class FinderSync: FIFinderSync {
     }
 
     override func beginObservingDirectory(at url: URL) {
+        logger.notice("Finder began observing directory=\(url.path, privacy: .private)")
     }
 
     override func endObservingDirectory(at url: URL) {
@@ -164,6 +221,7 @@ class FinderSync: FIFinderSync {
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu {
         let start = CFAbsoluteTimeGetCurrent()
+        runtimeReporter.recordMenuRequest()
         defer {
             let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1_000
             logger.debug("Built Finder menu in \(elapsed, privacy: .public) ms")
@@ -177,9 +235,7 @@ class FinderSync: FIFinderSync {
     }
 
     private func configuredMenu(context: FinderContext) -> NSMenu {
-        menuActionTokens.removeAll(keepingCapacity: true)
-        menuActionTitleTokens.removeAll(keepingCapacity: true)
-        nextMenuActionTag = 1
+        menuActions.removeAll(keepingCapacity: true)
 
         let rootMenu = NSMenu(title: L10n.string("app.name"))
         appendConfiguredMenuGroups(to: rootMenu, context: context)
@@ -192,7 +248,6 @@ class FinderSync: FIFinderSync {
         applyPinnedApplicationFallback()
         refreshMonitoredDirectoriesFromPreferences()
         preloadApplicationIcons()
-        runtimeReporter.recordConfigurationUpdate()
     }
 
     private func applyPinnedApplicationFallback() {
@@ -207,25 +262,59 @@ class FinderSync: FIFinderSync {
     }
 
     private func refreshMonitoredDirectoriesFromPreferences() {
+        monitoringGeneration += 1
+        let generation = monitoringGeneration
+        monitoredFolderAccess.refresh(preferences: store.preferences)
+        if !sharedContainerAvailable {
+            synchronizedDirectoryURLs = Set((FinderFolderSyncStore.synchronizedPaths() ?? []).map {
+                URL(fileURLWithPath: $0, isDirectory: true)
+            })
+        }
         applyMonitoredDirectoryURLs(monitoredDirectoryURLs())
+        // Discovery only expands coverage; failure never removes bootstrap roots.
+        let reference = MainQueueReference(self)
+        DispatchQueue.global(qos: .utility).async {
+            let discovered = Set(MonitoredFolderPolicy.safeTopLevelDirectoryURLs(
+                in: MonitoredFolderPolicy.userHomeDirectory()
+            ))
+            DispatchQueue.main.async {
+                guard let finderSync = reference.value,
+                      finderSync.monitoringGeneration == generation else { return }
+                finderSync.discoveredDirectoryURLs = discovered
+                finderSync.applyMonitoredDirectoryURLs(finderSync.monitoredDirectoryURLs())
+            }
+        }
     }
 
     private func applyMonitoredDirectoryURLs(_ urls: Set<URL>) {
+        guard appliedDirectoryURLs != urls else { return }
+        appliedDirectoryURLs = urls
         FIFinderSyncController.default().directoryURLs = Set(urls)
+        runtimeReporter.recordConfigurationUpdate(
+            directoryURLs: urls,
+            unavailableBookmarkPaths: monitoredFolderAccess.unavailableBookmarkPaths
+        )
+        if !monitoredFolderAccess.unavailableBookmarkPaths.isEmpty {
+            logger.error("Some selected folders require reselection because their bookmark or directory access is unavailable")
+        }
         logger.info(
-            "Monitoring \(urls.count, privacy: .public) safe roots with policy \(FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion, privacy: .public)"
+            "Monitoring \(urls.count, privacy: .public) safe roots with policy \(FinderExtensionRuntimeSnapshot.currentMonitoringPolicyVersion, privacy: .public), selected=\(self.synchronizedDirectoryURLs.count, privacy: .public)"
         )
     }
 
     private func monitoredDirectoryURLs() -> Set<URL> {
-        MonitoredFolderPolicy.finderSyncDirectoryURLs(for: store.preferences)
+        Set(MonitoredFolderPolicy.defaultDirectoryURLsForFinderSyncBootstrap())
+            .union(monitoredFolderAccess.directoryURLs)
+            .union(discoveredDirectoryURLs)
+            .union(synchronizedDirectoryURLs)
     }
 
     private func observePreferenceChanges() {
         let observer = Unmanaged.passUnretained(self).toOpaque()
         for notificationName in [
             PreferencesChangeNotifier.name,
-            PinnedApplicationSyncStore.notificationName
+            PinnedApplicationSyncStore.notificationName,
+            FinderFolderSyncStore.notificationName
         ] {
             CFNotificationCenterAddObserver(
                 CFNotificationCenterGetDarwinNotifyCenter(),
@@ -447,10 +536,10 @@ class FinderSync: FIFinderSync {
         item.target = self
         item.isEnabled = isEnabled
         item.image = image
-        item.representedObject = FinderMenuAction(token: token, context: context)
+        let action = FinderMenuAction(token: token, context: context)
+        item.representedObject = action
         item.tag = nextMenuActionTag
-        menuActionTokens[item.tag] = token
-        menuActionTitleTokens[title] = token
+        menuActions[item.tag] = action
         nextMenuActionTag += 1
         return item
     }
@@ -627,30 +716,27 @@ class FinderSync: FIFinderSync {
     }
 
     @objc private func handleMenuAction(_ sender: NSMenuItem) {
+        logger.notice(
+            "Received Finder menu action tag=\(sender.tag, privacy: .public), hasRepresentedObject=\(sender.representedObject != nil, privacy: .public)"
+        )
         store.reload()
-        guard store.preferences.finderToolsEnabled else { return }
-        guard let token = token(for: sender)
-        else {
-            logger.error("Menu action missing token for item \(sender.title, privacy: .public), tag=\(sender.tag, privacy: .public)")
-            notifyFailure("notification.actionFailed")
+        guard store.preferences.finderToolsEnabled else {
+            logger.notice("Rejected Finder menu action because Finder tools are disabled")
             return
         }
-
-        guard let action = sender.representedObject as? FinderMenuAction else {
-            notifyFailure("notification.actionFailed")
-            return
-        }
-        let context = action.context
         let controller = FIFinderSyncController.default()
-        guard context.isValidForExecution(
+        guard let action = validatedMenuAction(
+            for: sender,
             currentSelectedURLs: controller.selectedItemURLs() ?? [],
             currentTargetedURL: controller.targetedURL()
         ) else {
             notifyFailure("notification.noSelection")
             return
         }
+        let token = action.token
+        let context = action.context
         logger.info(
-            "Handling menu action \(token.rawValue, privacy: .public), selected=\(context.selectedURLs.count, privacy: .public), hasTarget=\(context.targetedURL != nil, privacy: .public)"
+            "Handling Finder menu action tag=\(sender.tag, privacy: .public), selected=\(context.selectedURLs.count, privacy: .public), hasTarget=\(context.targetedURL != nil, privacy: .public)"
         )
 
         switch token {
@@ -663,51 +749,26 @@ class FinderSync: FIFinderSync {
         }
     }
 
-    private func token(for item: NSMenuItem) -> FinderCommandToken? {
-        (item.representedObject as? FinderMenuAction)?.token
-            ?? menuActionTokens[item.tag]
-            ?? ((item.representedObject as? String).flatMap(FinderCommandToken.init(rawValue:)))
-            ?? menuActionTitleTokens[item.title]
-            ?? tokenFromVisibleTitle(item.title)
-    }
-
-    private func tokenFromVisibleTitle(_ title: String) -> FinderCommandToken? {
-        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if normalizedTitle == L10n.string("menu.newFile"),
-           let template = store.preferences.templates.first {
-            return .template(template.id)
+    private func validatedMenuAction(
+        for item: NSMenuItem,
+        currentSelectedURLs: [URL],
+        currentTargetedURL: URL?
+    ) -> FinderMenuAction? {
+        // Finder may return a proxy NSMenuItem without our representedObject.
+        // The local entry binds both the command and its original Finder snapshot;
+        // titles and represented objects cannot revive an expired menu tag.
+        guard let action = menuActions[item.tag] else {
+            logger.notice("Rejected Finder menu action with unknown or expired tag=\(item.tag, privacy: .public)")
+            return nil
         }
-
-        let shortcutPrefix = newFileShortcutPrefix()
-        let templateTitle = normalizedTitle.hasPrefix(shortcutPrefix)
-            ? String(normalizedTitle.dropFirst(shortcutPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-            : normalizedTitle
-
-        if let template = store.preferences.templates.first(where: { template in
-            template.localizedDisplayName == templateTitle || template.displayName == templateTitle
-        }) {
-            return .template(template.id)
+        guard action.context.isValidForExecution(
+            currentSelectedURLs: currentSelectedURLs,
+            currentTargetedURL: currentTargetedURL
+        ) else {
+            logger.notice("Rejected Finder menu action because its Finder snapshot changed, tag=\(item.tag, privacy: .public)")
+            return nil
         }
-
-        if let command = MenuCommand.allCases.first(where: { $0.title == normalizedTitle }) {
-            return .command(command)
-        }
-
-        if let pinnedPath = store.preferences.pinnedApplicationPaths.first(where: { path in
-            URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent == normalizedTitle
-        }) {
-            return .pinnedApplication(pinnedPath)
-        }
-
-        return nil
-    }
-
-    private func newFileShortcutPrefix() -> String {
-        let marker = "__CLICKMATE_TEMPLATE_MARKER__"
-        let localized = L10n.string("menu.newFileShortcut", marker)
-        guard let range = localized.range(of: marker) else { return "" }
-        return String(localized[..<range.lowerBound])
+        return action
     }
 
     private func contextKind(for menuKind: FIMenuKind) -> FinderMenuContext.Kind {
@@ -731,7 +792,7 @@ class FinderSync: FIFinderSync {
             command: .createFile(templateID: templateID, directoryURL: directory),
             fallbackRoute: .createFile(templateID: templateID, directory: directory)
         )
-        opened ? notifySuccess("notification.completed") : notifyFailure("notification.createFailed")
+        if !opened { notifyFailure("notification.createFailed") }
     }
 
     private func run(command: MenuCommand, context: FinderContext) {

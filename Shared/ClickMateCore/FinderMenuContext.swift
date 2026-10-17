@@ -36,17 +36,18 @@ struct FinderMenuContext {
 
     func isValidForExecution(
         currentSelectedURLs: [URL],
-        currentTargetedURL: URL?,
-        exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+        currentTargetedURL: URL?
     ) -> Bool {
         if !selectedURLs.isEmpty {
             let snapshot = Set(selectedURLs.map(\.standardizedFileURL))
             let current = Set(currentSelectedURLs.map(\.standardizedFileURL))
-            return snapshot == current && selectedURLs.allSatisfy(exists)
+            // Finder supplies the selection, but its extension's sandbox may not
+            // allow stat/read access. The host validates access when executing.
+            return snapshot == current && selectedURLs.allSatisfy(\.isFileURL)
         }
         guard let destinationDirectory,
               targetedURL?.standardizedFileURL == currentTargetedURL?.standardizedFileURL
         else { return false }
-        return exists(destinationDirectory)
+        return destinationDirectory.isFileURL
     }
 }

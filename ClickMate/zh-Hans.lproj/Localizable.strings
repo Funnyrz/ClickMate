@@ -80,9 +80,9 @@
 "permissions.extensionStatusUnknown" = "如果右键菜单没有出现，请启用访达扩展并重新加载访达。";
 "permissions.wideCoverageDescription" = "默认覆盖用户目录下可见的安全一级目录，例如桌面、文稿、下载、Projects 和 Workspace；不包含用户 Library、隐藏目录、外接磁盘和 DMG。";
 "permissions.reloadRequested" = "已请求刷新。如果菜单仍未出现，请重启访达。";
-"permissions.monitoringUpdated" = "监控文件夹已更新。";
-"permissions.monitoringUpdatedWithSkipped" = "监控文件夹已更新，已跳过 %d 个不支持的文件夹。";
-"permissions.blockedFolder" = "ClickMate 不能监控用户主目录、用户 Library 或受保护的系统文件夹。";
+"permissions.monitoringUpdated" = "目录配置已保存，请重新打开 Finder 菜单验证覆盖。";
+"permissions.monitoringUpdatedWithSkipped" = "已请求同步目录，Finder 覆盖尚未验证；已跳过 %d 个不支持的文件夹。";
+"permissions.blockedFolder" = "ClickMate 不能监控用户主目录、用户 Library、受保护的系统文件夹或整个磁盘，请选择具体的子文件夹。";
 "permissions.bookmarkMissing" = "请重新选择此文件夹以刷新手动授权。";
 "permissions.footer" = "基础访达菜单覆盖安全默认目录及其子目录；用户 Library、隐藏目录、外接磁盘和 DMG 需要保持排除或由你明确添加。";
 "permissions.stepAccessibilityTitle" = "辅助功能";
@@ -276,14 +276,14 @@
 "permissions.fullDiskAccessWaitingForReturn" = "等待从系统设置返回…";
 "permissions.fullDiskAccessRelaunching" = "正在自动重启 ClickMate 以应用权限…";
 "permissions.fullDiskAccessReloadingExtension" = "ClickMate 已重启，正在重新加载 Finder Extension…";
-"permissions.fullDiskAccessApplied" = "系统权限已重新加载。";
+"permissions.fullDiskAccessApplied" = "进程已刷新 · 权限未验证";
 "permissions.fullDiskAccessAppliedDetail" = "ClickMate 和 Finder Extension 已使用新进程启动；权限将在下一次实际文件操作中验证。";
 "permissions.fullDiskAccessApplyFailed" = "ClickMate 已重新启动，但 Finder Extension 未能完成重新加载。请点击上方“重新加载扩展”，或重新启动 Finder 后再试。";
 "permissions.fullDiskAccessApplyFailedStatus" = "重新应用未完成";
 "permissions.fullDiskAccessLastOperationSucceeded" = "最近一次用户文件操作已成功。";
 "permissions.fullDiskAccessLastOperationDenied" = "最近一次用户文件操作被系统拒绝；请检查完全磁盘访问或显式添加当前目录。";
 "permissions.fullDiskAccessLastOperationFailed" = "最近一次用户文件操作失败，但无法确认是否由权限导致。";
-"permissions.fullDiskAccessSystemManaged" = "请在系统设置中确认权限。";
+"permissions.fullDiskAccessSystemManaged" = "系统管理 · 未验证";
 "permissions.fullDiskAccessExtensionUnknown" = "ClickMate 已通过检测，Finder Extension 尚未报告状态。";
 "permissions.fullDiskAccessExtensionMissing" = "ClickMate 已通过检测，但 Finder Extension 尚未获得完整访问。";
 "permissions.fullDiskAccessUnknown" = "暂时无法确认完全磁盘访问状态。";
@@ -295,10 +295,25 @@
 "permissions.diskAccessStatusUnavailable" = "无法探测";
 "permissions.diskAccessStatusUnknown" = "未知";
 "permissions.temporarySignatureWarning" = "当前构建没有稳定的正式签名身份；重新安装或重新构建后，macOS 可能要求再次授权辅助功能、录屏和完全磁盘访问。";
-"permissions.sharedContainerUnavailable" = "当前构建无法使用共享 Finder 运行通道，但基础右键菜单和安全默认目录仍可使用。自定义配置同步与自动权限验证需要使用 Apple Development 或 Developer ID 签名，并包含有效 App Group 授权描述文件的版本。";
+"permissions.sharedContainerUnavailable" = "当前构建没有 App Group。明确选择的文件夹可通过独立通道同步；其他 Finder 菜单配置使用默认值，扩展状态与目录覆盖在此无法验证。";
 "permissions.finderRuntimeUnavailableStatus" = "当前构建不支持扩展状态共享";
-"permissions.fullDiskAccessManualVerificationStatus" = "通过文件操作验证";
-"permissions.fullDiskAccessManualVerificationDetail" = "当前构建无法自动验证完全磁盘访问；这不表示权限失败。实际访问能力会在你下一次主动执行文件操作时确认。";
+"permissions.fullDiskAccessManualVerificationStatus" = "系统管理 · 未验证";
+"permissions.fullDiskAccessManualVerificationDetail" = "请在系统设置 → 隐私与安全性 → 完全磁盘访问权限中确认 ClickMate。修改后退出并重新打开 ClickMate，再重新加载 Finder 扩展。进程重启和文件操作成功均不能证明完全磁盘访问已授权；文件操作仅验证目标目录。";
+"permissions.customFolderSyncUnavailable" = "无需 App Group 也可同步已选择的目录。下载等目录若重定向到外置盘，请选择实际目标文件夹。Finder 会异步应用变更，请重新打开右键菜单验证。";
+"permissions.bookmarkSaveFailed" = "部分所选目录无法保存访问授权，未被添加，请重新选择这些目录。";
+"permissions.bookmarkUnavailable" = "目录授权已过期或撤销，请移除后重新选择此目录。";
+"permissions.sharedChannelAvailable" = "共享配置通道：可用";
+"permissions.sharedChannelUnavailable" = "共享配置通道：不可用";
+"permissions.monitoredCoverage" = "Finder 报告的监控目录：\n%@";
+"permissions.monitoredCoverageUnknown" = "监控目录覆盖：未验证";
+"permissions.configurationUpdated" = "配置应用时间：%@";
+"permissions.lastMenuRequest" = "最近 Finder 菜单请求：%@";
+"permissions.directoryAccessDetails" = "最近目录操作：%@\n进程 %d · %@";
+"permissions.directoryAccessSucceeded" = "该目录操作成功，完全磁盘访问权限仍未验证。";
+"permissions.directoryAccessDenied" = "该目录的访问被拒绝，请重新选择目录或检查其访问权限。";
+"permissions.directoryAccessFailed" = "该目录操作失败，此错误不足以判断为权限拒绝。";
+"permissions.directoryAccessUnverified" = "目录访问：本次会话尚未记录用户发起的实际操作。";
+"guide.finderDefaultInstructions" = "可在安全本地目录试用默认菜单；对于重定向或外置目录，请在权限页明确选择目标文件夹，再重新打开其 Finder 菜单。";
 "quickFeatures.permissionFailed" = "权限请求失败";
 
 "tasks.title" = "文件任务";
@@ -538,3 +553,7 @@
 "settingsData.unsupportedVersion" = "此设置文件使用了不支持的格式版本。";
 
 "guide.trialFilesRetained" = "您添加或修改的文件已保留在 %@。";
+"permissions.chooseRedirectedFolders" = "选择重定向目录…";
+"permissions.redirectedFoldersDescription" = "部分默认目录已重定向到用户目录之外。请逐个选择实际目标文件夹以启用菜单，仅授权该子文件夹，不要选择整个磁盘。";
+"permissions.folderSyncRequested" = "目录配置已保存并已请求同步；Finder 监控覆盖尚未验证。";
+"permissions.folderSyncFailed" = "目录配置已保存，但同步请求失败。请重新选择目录或重启 ClickMate；Finder 监控覆盖尚未验证。";

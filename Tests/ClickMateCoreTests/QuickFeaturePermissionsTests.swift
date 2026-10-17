@@ -1,6 +1,13 @@
 import XCTest
 
 final class QuickFeaturePermissionsTests: XCTestCase {
+    func testProcessRefreshNeverConfirmsFullDiskAccess() {
+        for phase in [nil, .waitingForReturn, .relaunchScheduled, .reloadingExtension, .completed] as [FullDiskAccessRecoveryPhase?] {
+            XCTAssertNil(QuickFeatureHelperService.fullDiskAccessStatusIsGood(for: phase))
+        }
+        XCTAssertEqual(QuickFeatureHelperService.fullDiskAccessStatusIsGood(for: .failed), false)
+    }
+
     func testPermissionRequestTrackerAllowsOnlyOneActiveRequest() {
         var tracker = QuickFeaturePermissionRequestTracker()
         let first = tracker.begin(kind: .accessibility)
@@ -128,7 +135,9 @@ final class QuickFeaturePermissionsTests: XCTestCase {
         XCTAssertNil(service.fullDiskAccessRecoveryPhase)
         XCTAssertFalse(service.diskAccessNeedsRelaunch)
         XCTAssertFalse(service.isApplyingDiskAccessChanges)
-        XCTAssertNil(service.diskAccessRecoveryMessage)
+        XCTAssertNotNil(service.diskAccessRecoveryMessage)
+        XCTAssertEqual(service.mainDiskAccessStatus, .unknown)
+        XCTAssertEqual(service.finderDiskAccessStatus, .unknown)
     }
 
     @MainActor

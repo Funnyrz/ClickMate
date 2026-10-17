@@ -17,6 +17,14 @@ ClickMate brings everyday file tools to Finder: create files from templates, cop
 3. For Finder tools, enable the ClickMate Finder extension in System Settings and authorize the folders you use. Then right-click a file or a blank area in a monitored folder, such as Desktop, Documents, or Downloads.
 4. Enable optional shortcuts in **Quick Features**. Complete the corresponding permission setup before trying them.
 
+**For the unsigned release:** after copying the app to `/Applications`, open Terminal and run the following command, then open ClickMate:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/ClickMate.app
+```
+
+This removes the downloaded app’s quarantine attribute. Folder access and other system permissions must still be granted separately.
+
 | Tool | Required setup |
 |---|---|
 | Finder tools | Finder extension enabled and access to the target folder. Use the folder authorization and disk-access diagnostics when access fails. |
@@ -183,6 +191,8 @@ xcodebuild analyze -project ClickMate.xcodeproj -scheme ClickMate -destination '
 
 A fully functional signed build needs one development team for the main app, Helper, and Finder extension, with the App Group capability provisioned. Enable the Finder extension in System Settings after installing the build.
 
+On first installation, registering menus in default folders does not depend on Full Disk Access. Folder grants control actual file access. Explicitly selected custom folders can use the local fallback sync channel without App Group; other Finder settings still require App Group. The permission page reports these separately. Restarting processes does not prove a permission grant, and an operation result applies only to its displayed directory.
+
 For the bilingual documentation screenshot workflow, see [Screenshot generation](Scripts/README-screenshots.md).
 
 </details>
@@ -204,19 +214,34 @@ The script builds Universal 2 binaries, verifies component identities, provision
 **Local permission and Finder acceptance:** use a stable Apple Development team. This package is for local testing, not public distribution.
 
 ```sh
-export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
-# Optional when multiple certificates have the same display name:
-export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
+# A single valid Apple Development certificate is selected automatically using its actual Team ID.
+# With multiple certificates: export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
 Scripts/package_development_dmg.sh
+Scripts/install_development.sh build/development/DerivedData/Build/Products/Release/ClickMate.app --dry-run
+Scripts/install_development.sh
 ```
 
-**Unsigned diagnostics:** no development team is required.
+By default, packaging uses existing profiles. The main app and extension each need an explicit App ID and a valid profile authorizing `group.com.zxacn`; wildcard profiles are insufficient. To let Xcode create or download profiles, run `CLICKMATE_ALLOW_PROVISIONING_UPDATES=1 Scripts/package_development_dmg.sh`. Missing certificates, team capabilities, or profiles produce an explicit failure without an ad-hoc fallback.
+
+Quit the app, stop its Background Service, and disable its Finder extension before installation so old processes cannot retain old code. The installer retains the previous bundle for recovery and does not modify TCC. When migrating from ad-hoc signing, you may need to remove the old privacy entries and re-add the installed app or Background Service once. Keep development and Developer ID distribution channels separate; permission continuity between them is not assumed.
+
+Verify identity continuity between two fully provisioned builds with changed code:
+
+```sh
+python3 Scripts/verify_signing_identity.py compare /path/to/previous/ClickMate.app /path/to/candidate/ClickMate.app --require-code-change
+```
+
+Set `CLICKMATE_PREVIOUS_APP` during packaging to check all three components against a previous signed app. First-installation acceptance still requires a macOS user or VM with no existing configuration or TCC grants; local unit tests are not a substitute.
+
+**Unsigned package:** no development team is required.
 
 ```sh
 Scripts/package_unsigned_dmg.sh
 ```
 
-Unsigned packages remove App Group entitlements. Default Finder actions in safe folders can use the URL fallback, but custom Finder settings synchronization, shared runtime status, and automatic permission verification are unavailable. Shortcut service startup is session-only, and rebuilt ad-hoc identities may require permissions again. Use a signed build to validate stable permission identities and the complete shared-queue path.
+Unsigned packages remove App Group entitlements. Default Finder actions use the URL fallback. Explicitly selected monitoring folders sync through a local session channel and are cached by the extension; access bookmarks stay in the main app. Select the actual destination subfolder in Permissions when Downloads or another standard folder points to an external disk. Other Finder settings synchronization, shared runtime status, and automatic permission verification remain unavailable. Shortcut service startup is session-only, and rebuilt ad-hoc identities may require permissions again. Use a signed build to validate stable permission identities and the complete shared-queue path.
+
+The unsigned DMG contains `ClickMate.app` and an `Applications` shortcut. Drag the app to Applications, then open the installed copy. Its application name and installation steps match the other packages; it does not use a developer certificate or notarization. Replacing a build may require permissions again, so avoid running different copies together.
 
 </details>
 

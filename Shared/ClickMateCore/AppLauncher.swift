@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 
 struct PinnedApplicationSyncSnapshot: Codable, Equatable {
     static let currentVersion = 1
@@ -69,6 +70,100 @@ enum PinnedApplicationPathPolicy {
             return nil
         }
         return applicationURL.path
+    }
+}
+
+/// Monitoring hints only. Bookmarks and file access remain in the main app.
+/// The named pasteboard is not an authenticated source of authorization.
+struct FinderFolderSyncSnapshot: Codable, Equatable {
+    var version = 1
+    var updatedAt: Date
+    var paths: [String]
+
+    init(paths: [String], updatedAt: Date = .now) {
+        self.paths = paths
+        self.updatedAt = updatedAt
+    }
+}
+
+enum FinderFolderSyncStore {
+    static let notificationName = "\(AppConstants.bundleIdentifier).finderFoldersChanged"
+    static let pasteboardName = NSPasteboard.Name("\(AppConstants.bundleIdentifier).finder-folders")
+    static let pasteboardType = NSPasteboard.PasteboardType("\(AppConstants.bundleIdentifier).finder-folders+json")
+    private static let maximumPayloadSize = 256 * 1024
+
+    static var defaultCacheFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ClickMate", isDirectory: true)
+            .appendingPathComponent("FinderFolderSync.json")
+    }
+
+    @discardableResult
+    static func publish(
+        preferences: ClickMatePreferences,
+        updatedAt: Date = .now,
+        pasteboardName: NSPasteboard.Name = pasteboardName
+    ) -> Bool {
+        let paths = Array(Set(preferences.monitoredFolderPaths.filter {
+            !(preferences.monitoredFolderBookmarks[$0]?.isEmpty ?? true)
+                && MonitoredFolderPolicy.isAllowedExplicitMonitoringPath($0)
+        }.map { MonitoredFolderPolicy.canonicalPath(for: URL(fileURLWithPath: $0, isDirectory: true)) })).sorted()
+        guard paths.count <= 256 else { return false }
+        let snapshot = FinderFolderSyncSnapshot(paths: paths, updatedAt: updatedAt)
+        guard let data = try? JSONEncoder().encode(snapshot), data.count <= maximumPayloadSize else { return false }
+        let pasteboard = NSPasteboard(name: pasteboardName)
+        // Also notify on startup: an extension may have started from a stale cache.
+        if decode(pasteboard.data(forType: pasteboardType))?.paths != paths {
+            pasteboard.clearContents()
+            guard pasteboard.setData(data, forType: pasteboardType) else { return false }
+        }
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(notificationName as CFString), nil, nil, true
+        )
+        return true
+    }
+
+    static func synchronizedPaths(
+        cacheFileURL: URL = defaultCacheFileURL,
+        pasteboardName: NSPasteboard.Name = pasteboardName
+    ) -> [String]? {
+        let published = decode(NSPasteboard(name: pasteboardName).data(forType: pasteboardType))
+        let cached = decode(try? Data(contentsOf: cacheFileURL))
+        // Live state wins even after a clock change. An empty list is a removal,
+        // and must replace the cache rather than resurrecting old directories.
+        if let published {
+            if published != cached, let data = try? JSONEncoder().encode(published) {
+                do {
+                    try FileManager.default.createDirectory(
+                        at: cacheFileURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+                        attributes: [.posixPermissions: 0o700]
+                    )
+                    try data.write(to: cacheFileURL, options: .atomic)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheFileURL.path)
+                } catch {
+                    // Session monitoring can still work; a later refresh retries persistence.
+                    Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderSync")
+                        .error("Could not persist Finder folder configuration")
+                }
+            }
+            return published.paths
+        }
+        return cached?.paths
+    }
+
+    private static func decode(_ data: Data?) -> FinderFolderSyncSnapshot? {
+        guard let data, data.count <= maximumPayloadSize,
+              var snapshot = try? JSONDecoder().decode(FinderFolderSyncSnapshot.self, from: data),
+              snapshot.version == 1, snapshot.paths.count <= 256,
+              snapshot.paths.allSatisfy({
+                  $0.utf8.count <= 4096 && !$0.contains("\0")
+                      && MonitoredFolderPolicy.isAllowedExplicitMonitoringPath($0)
+              }) else { return nil }
+        snapshot.paths = Array(Set(snapshot.paths.map {
+            MonitoredFolderPolicy.canonicalPath(for: URL(fileURLWithPath: $0, isDirectory: true))
+        })).sorted()
+        return snapshot
     }
 }
 
@@ -597,10 +692,44 @@ enum AppLauncher {
     }
 
     private static func openContainingApp(url: URL, activates: Bool) -> Bool {
+        let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "FinderDispatch")
+        let action = url.host ?? "unknown"
+        guard let applicationURL = containingApplicationURL(for: Bundle.main.bundleURL) else {
+            logger.error("Cannot locate containing app for action=\(action, privacy: .public)")
+            return false
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = activates
-        NSWorkspace.shared.open(url, configuration: configuration)
+        // A URL-scheme lookup can select an old build with the same Bundle ID.
+        // Always return to the app that actually contains this extension/Helper.
+        configuration.allowsRunningApplicationSubstitution = false
+        logger.notice("Dispatching action=\(action, privacy: .public) to app=\(applicationURL.path, privacy: .private)")
+        NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration) { application, error in
+            if let error {
+                let failure = error as NSError
+                logger.error("Dispatch failed action=\(action, privacy: .public), domain=\(failure.domain, privacy: .public), code=\(failure.code)")
+                ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.openFailed")
+            } else {
+                logger.notice("Delivered action=\(action, privacy: .public), pid=\(application?.processIdentifier ?? 0)")
+            }
+        }
+        // Accepted for asynchronous delivery; execution is reported by the host.
         return true
+    }
+
+    static func containingApplicationURL(
+        for bundleURL: URL,
+        bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
+    ) -> URL? {
+        guard bundleURL.isFileURL else { return nil }
+        var candidate = bundleURL.standardizedFileURL
+        while candidate.path != "/" {
+            if candidate.pathExtension == "app", bundleIdentifier(candidate) == AppConstants.bundleIdentifier {
+                return candidate
+            }
+            candidate.deleteLastPathComponent()
+        }
+        return nil
     }
 
     private static func applicationURL(

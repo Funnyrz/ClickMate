@@ -80,9 +80,9 @@
 "permissions.extensionStatusUnknown" = "If the menu does not appear, enable the Finder extension and reload Finder.";
 "permissions.wideCoverageDescription" = "ClickMate covers visible, safe top-level folders in your home directory, such as Desktop, Documents, Downloads, Projects, and Workspace. User Library, hidden folders, external disks, and DMGs are excluded.";
 "permissions.reloadRequested" = "Refresh requested. Restart Finder if the menu still does not appear.";
-"permissions.monitoringUpdated" = "Monitored folders updated.";
-"permissions.monitoringUpdatedWithSkipped" = "Monitored folders updated. Skipped %d unsupported folder(s).";
-"permissions.blockedFolder" = "ClickMate cannot monitor your home folder, user Library, or protected system folders.";
+"permissions.monitoringUpdated" = "Folder configuration saved. Reopen the Finder menu to verify coverage.";
+"permissions.monitoringUpdatedWithSkipped" = "Folder sync requested; Finder coverage is unverified. Skipped %d unsupported folder(s).";
+"permissions.blockedFolder" = "ClickMate cannot monitor your home folder, user Library, protected system folders, or an entire disk. Choose a specific folder.";
 "permissions.bookmarkMissing" = "Choose this folder again to refresh manual access.";
 "permissions.footer" = "The basic Finder menu covers safe default folders and their contents. User Library, hidden folders, external disks, and DMGs remain excluded unless you explicitly add a supported location.";
 "permissions.stepAccessibilityTitle" = "Accessibility";
@@ -276,14 +276,14 @@
 "permissions.fullDiskAccessWaitingForReturn" = "Waiting for System Settings to close…";
 "permissions.fullDiskAccessRelaunching" = "Restarting ClickMate once to apply access…";
 "permissions.fullDiskAccessReloadingExtension" = "ClickMate restarted; reloading Finder Extension…";
-"permissions.fullDiskAccessApplied" = "System access reloaded.";
+"permissions.fullDiskAccessApplied" = "Processes refreshed · access unverified";
 "permissions.fullDiskAccessAppliedDetail" = "ClickMate and Finder Extension restarted with new processes. Access will be verified by the next user-initiated file operation.";
 "permissions.fullDiskAccessApplyFailed" = "ClickMate restarted, but Finder Extension did not finish reloading. Use Reload Extension above, or restart Finder and try again.";
 "permissions.fullDiskAccessApplyFailedStatus" = "Reapply not completed";
 "permissions.fullDiskAccessLastOperationSucceeded" = "The most recent user-initiated file operation succeeded.";
 "permissions.fullDiskAccessLastOperationDenied" = "The most recent file operation was denied. Check Full Disk Access or explicitly add the current folder.";
 "permissions.fullDiskAccessLastOperationFailed" = "The most recent file operation failed, but the cause could not be confirmed as a permission issue.";
-"permissions.fullDiskAccessSystemManaged" = "Confirm access in System Settings.";
+"permissions.fullDiskAccessSystemManaged" = "System managed · unverified";
 "permissions.fullDiskAccessExtensionUnknown" = "ClickMate passed the check, but Finder Extension has not reported its status.";
 "permissions.fullDiskAccessExtensionMissing" = "ClickMate passed the check, but Finder Extension does not have effective access yet.";
 "permissions.fullDiskAccessUnknown" = "Full Disk Access cannot be verified right now.";
@@ -295,10 +295,25 @@
 "permissions.diskAccessStatusUnavailable" = "Unavailable";
 "permissions.diskAccessStatusUnknown" = "Unknown";
 "permissions.temporarySignatureWarning" = "This build does not have a stable distribution signing identity. macOS may require Accessibility, Screen Recording, and Full Disk Access again after rebuilding or reinstalling.";
-"permissions.sharedContainerUnavailable" = "The shared Finder runtime channel is unavailable in this build, but the basic Finder menu and safe default folders still work. Custom settings sync and automatic permission verification require an Apple Development or Developer ID signed build with a valid App Group provisioning profile.";
+"permissions.sharedContainerUnavailable" = "App Group is unavailable. Explicitly selected folders can sync separately; other Finder menu settings use the defaults. Extension status and coverage cannot be verified here.";
 "permissions.finderRuntimeUnavailableStatus" = "Extension status sharing unavailable in this build";
-"permissions.fullDiskAccessManualVerificationStatus" = "Verified by file actions";
-"permissions.fullDiskAccessManualVerificationDetail" = "This build cannot verify Full Disk Access automatically; that does not mean access failed. Effective access is confirmed by your next user-initiated file action.";
+"permissions.fullDiskAccessManualVerificationStatus" = "System managed · unverified";
+"permissions.fullDiskAccessManualVerificationDetail" = "Confirm ClickMate in System Settings → Privacy & Security → Full Disk Access. After a change, quit and reopen ClickMate and reload Finder Extension. Process restarts and successful file actions cannot confirm Full Disk Access; a file action verifies only its target directory.";
+"permissions.customFolderSyncUnavailable" = "Folder selections can sync without App Group. Select the actual destination folder for redirected Downloads or other folders. Finder applies changes asynchronously; reopen its menu to check.";
+"permissions.bookmarkSaveFailed" = "Some selected folders could not be authorized and were not added. Select those folders again.";
+"permissions.bookmarkUnavailable" = "Folder authorization expired or was revoked. Remove and select this folder again.";
+"permissions.sharedChannelAvailable" = "Shared configuration channel: available";
+"permissions.sharedChannelUnavailable" = "Shared configuration channel: unavailable";
+"permissions.monitoredCoverage" = "Finder reports monitoring:\n%@";
+"permissions.monitoredCoverageUnknown" = "Monitored directory coverage: unverified";
+"permissions.configurationUpdated" = "Configuration applied: %@";
+"permissions.lastMenuRequest" = "Last Finder menu request: %@";
+"permissions.directoryAccessDetails" = "Last directory operation: %@\nProcess %d · %@";
+"permissions.directoryAccessSucceeded" = "This directory operation succeeded. Full Disk Access remains unverified.";
+"permissions.directoryAccessDenied" = "Access to this directory was denied. Select the directory again or check its access settings.";
+"permissions.directoryAccessFailed" = "This directory operation failed; the error does not establish a permission denial.";
+"permissions.directoryAccessUnverified" = "Directory access: no user-initiated operation recorded in this session.";
+"guide.finderDefaultInstructions" = "Try the default menu in a safe local folder. For redirected or external folders, explicitly select the destination in Permissions, then reopen its Finder menu.";
 "quickFeatures.permissionFailed" = "Permission request failed";
 
 "tasks.title" = "File Tasks";
@@ -538,3 +553,7 @@
 "settingsData.unsupportedVersion" = "This settings file uses an unsupported format version.";
 
 "guide.trialFilesRetained" = "Files you added or changed were preserved at %@.";
+"permissions.chooseRedirectedFolders" = "Choose Redirected Folder…";
+"permissions.redirectedFoldersDescription" = "Some default folders point outside your home folder. Select each destination folder to enable its menu. Choose the folder itself, not the entire disk.";
+"permissions.folderSyncRequested" = "Folder configuration saved and sync requested. Finder coverage is not yet verified.";
+"permissions.folderSyncFailed" = "Folder configuration was saved, but the sync request failed. Retry selecting the folder or restart ClickMate; Finder coverage is unverified.";

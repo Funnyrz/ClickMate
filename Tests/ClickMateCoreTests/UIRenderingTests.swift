@@ -5,6 +5,36 @@ import XCTest
 
 @MainActor
 final class UIRenderingTests: XCTestCase {
+    func testExpandedPermissionDiagnosticsRenderDeniedDirectoryInBothLanguages() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("clickmate-permission-diagnostics", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let oldProvider = L10n.languageProvider
+        defer { L10n.languageProvider = oldProvider }
+        let service = QuickFeatureHelperService(
+            service: .loginItem(identifier: "com.zxacn.clickmate.tests.diagnostics"),
+            mainBundleURL: directory.appendingPathComponent("ClickMate.app"),
+            isFinderRuntimeChannelAvailable: false,
+            presentationSnapshotLoader: {
+                QuickFeaturePresentationSnapshot(registrationStatus: .notRegistered, runtimeSnapshot: nil,
+                    finderRuntimeSnapshot: nil, finderExtensionStatus: .unknown)
+            }
+        )
+        defer { service.stop() }
+        let monitor = DirectoryAccessMonitor()
+        monitor.record(directoryURL: URL(fileURLWithPath: "/Users/Example/Projects/Chosen Folder", isDirectory: true),
+                       error: NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)))
+        for language in [AppLanguage.english, .simplifiedChinese] {
+            let store = PreferencesStore(fileURL: directory.appendingPathComponent("unused-settings.json"), allowsWrites: false)
+            store.preferences.language = language
+            let observation = AppPreferences.bindLocalization(to: store)
+            defer { observation.cancel() }
+            let suffix = language == .english ? "en" : "zh"
+            try render(PermissionsView(helperService: service, directoryAccess: monitor, showsDetailedDiagnostics: true)
+                .environmentObject(store).padding(20), size: NSSize(width: 940, height: 2000),
+                to: directory.appendingPathComponent("permissions-diagnostics-\(suffix).png"))
+        }
+    }
+
     func testQuickFeaturesAndPermissionsRenderInBothLanguages() throws {
         let directory = URL(fileURLWithPath: "/tmp/clickmate-ui", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

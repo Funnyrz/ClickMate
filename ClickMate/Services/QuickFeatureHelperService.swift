@@ -81,7 +81,8 @@ final class QuickFeatureHelperService: ObservableObject {
         self.isFinderRuntimeChannelAvailable = isFinderRuntimeChannelAvailable
         self.presentationSnapshotLoader = presentationSnapshotLoader ?? {
             await QuickFeaturePresentationSnapshot.load(
-                finderRuntimeChannelAvailable: isFinderRuntimeChannelAvailable
+                finderRuntimeChannelAvailable: isFinderRuntimeChannelAvailable,
+                mainBundleURL: mainBundleURL
             )
         }
         self.presentationRefreshDate = presentationRefreshDate
@@ -137,6 +138,11 @@ final class QuickFeatureHelperService: ObservableObject {
 
     var lastHeartbeat: Date? {
         validatedSnapshot(currentRuntimeSnapshot)?.updatedAt
+    }
+
+    /// Process refresh is not evidence that macOS granted Full Disk Access.
+    nonisolated static func fullDiskAccessStatusIsGood(for phase: FullDiskAccessRecoveryPhase?) -> Bool? {
+        phase == .failed ? false : nil
     }
 
     func permissionState(for kind: QuickFeaturePermissionKind) -> QuickFeaturePermissionState {
@@ -433,9 +439,9 @@ final class QuickFeatureHelperService: ObservableObject {
         if finderExtensionRuntimeSnapshot != snapshot {
             finderExtensionRuntimeSnapshot = snapshot
         }
-        let status = snapshot?.diskAccessStatus ?? .unknown
-        if finderDiskAccessStatus != status {
-            finderDiskAccessStatus = status
+        // Legacy snapshots may contain probe results. They cannot prove full-disk access.
+        if finderDiskAccessStatus != .unknown {
+            finderDiskAccessStatus = .unknown
         }
         if snapshot != nil {
             if finderExtensionNeedsPolicyReload { finderExtensionNeedsPolicyReload = false }
@@ -592,6 +598,12 @@ final class QuickFeatureHelperService: ObservableObject {
             previousApplicationPID: ProcessInfo.processInfo.processIdentifier,
             previousFinderExtensionPID: currentFinderExtensionRuntimeSnapshot()?.pid
         )
+        if let retry = request.retry(
+            previousApplicationPID: ProcessInfo.processInfo.processIdentifier,
+            previousFinderExtensionPID: currentFinderExtensionRuntimeSnapshot()?.pid
+        ) {
+            request = retry
+        }
         guard request.markRelaunchScheduled() else { return }
         guard fullDiskAccessRecoveryStore.write(request) else {
             fullDiskAccessRecoveryPhase = .failed
@@ -622,7 +634,7 @@ final class QuickFeatureHelperService: ObservableObject {
     ) async -> Bool {
         let reloadStartedAt = Date.now
         await terminateFinderExtensionProcesses()
-        let status = await FinderExtensionPolicy.reloadBundledExtension()
+        let status = await FinderExtensionPolicy.reloadBundledExtension(appBundleURL: mainBundleURL)
         finderExtensionStatus = status
         guard status == .enabled else { return false }
         guard isFinderRuntimeChannelAvailable else {
@@ -733,7 +745,7 @@ final class QuickFeatureHelperService: ObservableObject {
         diskAccessNeedsRelaunch = false
         isApplyingDiskAccessChanges = false
         diskAccessChangesApplied = false
-        diskAccessRecoveryMessage = nil
+        diskAccessRecoveryMessage = L10n.string("permissions.fullDiskAccessManualVerificationDetail")
         finderExtensionNeedsPolicyReload = false
         finderExtensionPolicyMessage = nil
     }
@@ -741,8 +753,8 @@ final class QuickFeatureHelperService: ObservableObject {
     private func refreshFinderExtensionStatus() {
         invalidatePresentationRefresh()
         finderExtensionRefreshTask?.cancel()
-        finderExtensionRefreshTask = Task { [weak self] in
-            let status = await FinderExtensionPolicy.status()
+        finderExtensionRefreshTask = Task { [weak self, mainBundleURL] in
+            let status = await FinderExtensionPolicy.status(appBundleURL: mainBundleURL)
             guard !Task.isCancelled, let self else { return }
             finderExtensionStatus = status
         }
@@ -1459,7 +1471,7 @@ struct QuickFeaturePresentationSnapshot {
     var finderRuntimeSnapshot: FinderExtensionRuntimeSnapshot?
     var finderExtensionStatus: FinderExtensionStatus
 
-    static func load(finderRuntimeChannelAvailable: Bool) async -> Self {
+    static func load(finderRuntimeChannelAvailable: Bool, mainBundleURL: URL = Bundle.main.bundleURL) async -> Self {
         await Task.detached(priority: .utility) {
             let registrationStatus = SMAppService.loginItem(
                 identifier: QuickFeatureHelperService.helperBundleIdentifier
@@ -1467,7 +1479,7 @@ struct QuickFeaturePresentationSnapshot {
             let runtimeSnapshot = QuickFeatureRuntimeSnapshotStore.load()
             let finderSnapshot = finderRuntimeChannelAvailable
                 ? FinderExtensionRuntimeSnapshotStore.load() : nil
-            let finderStatus = await FinderExtensionPolicy.status()
+            let finderStatus = await FinderExtensionPolicy.status(appBundleURL: mainBundleURL)
             return Self(
                 registrationStatus: registrationStatus,
                 runtimeSnapshot: runtimeSnapshot,

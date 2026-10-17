@@ -514,6 +514,9 @@ final class PreferencesStore: ObservableObject {
 
     func waitForPendingSaves() {
         storageState = saveQueue.sync { persistence.state }
+        if storageState == .loaded || storageState == .firstRun {
+            publishPinnedApplicationsIfNeeded(preferences)
+        }
     }
 
     func retrySave() {
@@ -604,6 +607,7 @@ final class PreferencesStore: ObservableObject {
     private func publishPinnedApplicationsIfNeeded(_ preferences: ClickMatePreferences) {
         guard publishesPinnedApplications else { return }
         PinnedApplicationSyncStore.publish(paths: preferences.pinnedApplicationPaths)
+        FinderFolderSyncStore.publish(preferences: preferences)
     }
 
     // The queue owns mutable persistence state. Only the main-queue notification touches
@@ -884,9 +888,96 @@ enum MonitoredFolderPolicy {
         defaultDirectoryURLsForFinderSyncBootstrap(fileManager: fileManager).map(\.path)
     }
 
-    static func defaultDirectoryURLsForFinderSyncBootstrap(fileManager: FileManager = .default) -> [URL] {
-        let home = userHomeDirectory(fileManager: fileManager).standardizedFileURL
-        return safeTopLevelDirectoryURLs(in: home, fileManager: fileManager)
+    /// External redirects are offered for explicit selection, never enrolled
+    /// simply because a standard folder happens to link to another volume.
+    static func redirectedDefaultDirectoryURLs(
+        fileManager: FileManager = .default,
+        homeDirectory: URL? = nil
+    ) -> [URL] {
+        let home = (homeDirectory ?? userHomeDirectory(fileManager: fileManager)).standardizedFileURL
+        guard let resolvedHome = bootstrapResolvedURL(home, fileManager: fileManager) else { return [] }
+        return Array(Set(commonUserDirectoryNames.compactMap { name -> URL? in
+            let candidate = home.appendingPathComponent(name, isDirectory: true)
+            guard let target = bootstrapResolvedURL(candidate, fileManager: fileManager),
+                  !target.path.hasPrefix(resolvedHome.path + "/"),
+                  isAllowedExplicitMonitoringPath(target.path)
+            else { return nil }
+            return target
+        })).sorted { $0.path < $1.path }
+    }
+
+    /// This validates a monitoring hint, not a grant to read or modify files.
+    /// No existence check: selected disks can be temporarily disconnected.
+    static func isAllowedExplicitMonitoringPath(_ path: String) -> Bool {
+        guard (path as NSString).isAbsolutePath, !path.contains("\0"), path.utf8.count <= 4096 else { return false }
+        let canonical = canonicalPath(for: URL(fileURLWithPath: path, isDirectory: true))
+        guard !isBlockedSystemPath(canonical), !isUnsafeFinderSyncRoot(canonical),
+              !["/Users", "/Applications", "/Volumes"].contains(canonical) else { return false }
+        if canonical.hasPrefix("/Volumes/"), (canonical as NSString).pathComponents.count <= 3 { return false }
+        return true
+    }
+
+    static func defaultDirectoryURLsForFinderSyncBootstrap(
+        fileManager: FileManager = .default,
+        homeDirectory: URL? = nil
+    ) -> [URL] {
+        // Finder needs roots before it can ask for a menu. TCC may deny directory
+        // metadata on first launch, so bootstrap must not depend on a read probe.
+        let home = (homeDirectory ?? userHomeDirectory(fileManager: fileManager)).standardizedFileURL
+        guard let resolvedHome = bootstrapResolvedURL(home, fileManager: fileManager) else { return [] }
+        let homePath = resolvedHome.path
+        let libraryPath = resolvedHome.appendingPathComponent("Library", isDirectory: true).path
+        let resolvedLibraryPath = bootstrapResolvedURL(
+            home.appendingPathComponent("Library", isDirectory: true),
+            fileManager: fileManager
+        )?.path
+        return commonUserDirectoryNames.compactMap { name in
+            let candidate = home.appendingPathComponent(name, isDirectory: true)
+            guard let resolved = bootstrapResolvedURL(candidate, fileManager: fileManager),
+                  resolved.path.hasPrefix(homePath + "/"),
+                  resolved.path != libraryPath,
+                  !resolved.path.hasPrefix(libraryPath + "/"),
+                  resolvedLibraryPath.map({ resolved.path != $0 && !resolved.path.hasPrefix($0 + "/") }) ?? true,
+                  !isBlockedSystemPath(resolved.path),
+                  !isUnsafeFinderSyncRoot(resolved.path, fileManager: fileManager)
+            else { return nil }
+            return candidate
+        }
+    }
+
+    /// Resolve only symbolic links, including dangling links to unmounted disks.
+    /// A failed readlink means an ordinary or currently unreadable component; it
+    /// must not make first-launch monitoring depend on directory accessibility.
+    private static func bootstrapResolvedURL(_ url: URL, fileManager: FileManager) -> URL? {
+        var components = Array(url.standardizedFileURL.pathComponents.dropFirst())
+        var resolved = URL(fileURLWithPath: "/", isDirectory: true)
+        var followedLinks = 0
+        while !components.isEmpty {
+            let component = components.removeFirst()
+            if component == "." { continue }
+            if component == ".." {
+                resolved.deleteLastPathComponent()
+                continue
+            }
+            let candidate = resolved.appendingPathComponent(component, isDirectory: true)
+            guard let destination = try? fileManager.destinationOfSymbolicLink(atPath: candidate.path) else {
+                resolved = candidate
+                continue
+            }
+            followedLinks += 1
+            guard followedLinks <= 40 else { return nil }
+            let destinationComponents = (destination as NSString).pathComponents
+            if destination.hasPrefix("/") {
+                components = Array(destinationComponents.dropFirst()) + components
+                resolved = URL(fileURLWithPath: "/", isDirectory: true)
+            } else {
+                components = destinationComponents + components
+            }
+        }
+        // Foundation standardization maps existing /private/var paths back to
+        // /var, but leaves missing children unchanged. Keep one physical spelling
+        // for the safety comparison regardless of whether the child exists.
+        return resolved
     }
 
     static func safeTopLevelDirectoryURLs(
@@ -894,9 +985,11 @@ enum MonitoredFolderPolicy {
         fileManager: FileManager = .default
     ) -> [URL] {
         let home = homeDirectory.standardizedFileURL
-        let homeLibrary = canonicalPath(
-            for: home.appendingPathComponent("Library", isDirectory: true)
-        )
+        guard let resolvedHome = bootstrapResolvedURL(home, fileManager: fileManager) else { return [] }
+        let homeLibrary = bootstrapResolvedURL(
+            home.appendingPathComponent("Library", isDirectory: true),
+            fileManager: fileManager
+        )?.path ?? resolvedHome.appendingPathComponent("Library", isDirectory: true).path
         var candidates = commonUserDirectoryNames.map {
             home.appendingPathComponent($0, isDirectory: true)
         }
@@ -914,9 +1007,12 @@ enum MonitoredFolderPolicy {
             let values = try? candidate.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
             guard values?.isDirectory == true, values?.isPackage != true else { return nil }
 
+            guard let resolved = bootstrapResolvedURL(candidate, fileManager: fileManager),
+                  resolved.path.hasPrefix(resolvedHome.path + "/"),
+                  resolved.path != homeLibrary,
+                  !resolved.path.hasPrefix(homeLibrary + "/") else { return nil }
             let canonical = canonicalPath(for: candidate)
-            guard canonical != homeLibrary,
-                  !canonical.hasPrefix(homeLibrary + "/"),
+            guard
                   !isBlockedSystemPath(canonical),
                   !isUnsafeFinderSyncRoot(canonical, fileManager: fileManager),
                   isAvailableDirectory(canonical, fileManager: fileManager)
@@ -987,7 +1083,7 @@ enum MonitoredFolderPolicy {
         _ paths: [String],
         fileManager: FileManager = .default
     ) -> [String] {
-        normalizedUserPaths(paths, fileManager: fileManager)
+        normalizedUserPaths(paths, fileManager: fileManager, requireExistingDirectory: false)
     }
 
     static func normalizedUserPaths(
@@ -1046,17 +1142,19 @@ enum MonitoredFolderPolicy {
         for preferences: ClickMatePreferences,
         hasFullDiskAccess: Bool = DiskAccessPolicy.hasFullDiskAccess(),
         fileManager: FileManager = .default,
-        volumesRoot _: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        volumesRoot _: URL = URL(fileURLWithPath: "/Volumes", isDirectory: true),
+        bookmarkAccessProvider: @escaping FinderSyncFolderAccess.BookmarkAccessProvider = SecurityScopedFolderAccess.finderSyncScopedAccess
     ) -> Set<URL> {
         var urls = Set(defaultDirectoryURLsForFinderSyncBootstrap(fileManager: fileManager))
-
-        let selectedRoots = monitoredDirectoryURLs(
-            for: preferences,
-            requiresBookmarks: !hasFullDiskAccess,
-            fileManager: fileManager
-        )
-        urls.formUnion(selectedRoots)
-
+        let access = FinderSyncFolderAccess(bookmarkAccessProvider: bookmarkAccessProvider)
+        access.refresh(preferences: preferences)
+        urls.formUnion(access.directoryURLs)
+        // Retain the explicit legacy override for callers that already hold direct
+        // access. The extension itself keeps a FinderSyncFolderAccess alive instead.
+        if hasFullDiskAccess {
+            urls.formUnion(normalizedUserPaths(preferences.monitoredFolderPaths, fileManager: fileManager)
+                .map { URL(fileURLWithPath: $0, isDirectory: true) })
+        }
         return urls
     }
 
@@ -1079,28 +1177,6 @@ enum MonitoredFolderPolicy {
             }
             return path
         }
-    }
-
-    private static func monitoredDirectoryURLs(
-        for preferences: ClickMatePreferences,
-        requiresBookmarks: Bool,
-        fileManager: FileManager
-    ) -> Set<URL> {
-        let bookmarkPaths = Set(preferences.monitoredFolderBookmarks.keys.map {
-            canonicalPath(for: URL(fileURLWithPath: $0, isDirectory: true))
-        })
-
-        return Set(preferences.monitoredFolderPaths.compactMap { path in
-            let canonical = canonicalPath(for: URL(fileURLWithPath: path, isDirectory: true))
-            guard (!requiresBookmarks || bookmarkPaths.contains(canonical)),
-                  !isBlockedSystemPath(canonical),
-                  !isUnsafeFinderSyncRoot(canonical, fileManager: fileManager),
-                  isAvailableDirectory(canonical, fileManager: fileManager)
-            else {
-                return nil
-            }
-            return URL(fileURLWithPath: canonical, isDirectory: true)
-        })
     }
 
     private static func isAvailableDirectory(_ path: String, fileManager: FileManager) -> Bool {
@@ -1181,7 +1257,7 @@ enum DiskAccessPolicy {
 }
 
 struct FinderExtensionRuntimeSnapshot: Codable, Equatable {
-    static let currentMonitoringPolicyVersion = 4
+    static let currentMonitoringPolicyVersion = 6
 
     var pid: Int32
     var version: String
@@ -1190,6 +1266,10 @@ struct FinderExtensionRuntimeSnapshot: Codable, Equatable {
     var monitoringPolicyVersion: Int?
     var lastAccessResult: FinderExtensionAccessResult?
     var lastAccessAt: Date?
+    var monitoredDirectoryPaths: [String]?
+    var configurationUpdatedAt: Date?
+    var lastMenuRequestedAt: Date?
+    var unavailableBookmarkPaths: [String]?
 
     init(
         pid: Int32,
@@ -1198,7 +1278,11 @@ struct FinderExtensionRuntimeSnapshot: Codable, Equatable {
         diskAccessStatus: DiskAccessStatus,
         monitoringPolicyVersion: Int? = Self.currentMonitoringPolicyVersion,
         lastAccessResult: FinderExtensionAccessResult? = nil,
-        lastAccessAt: Date? = nil
+        lastAccessAt: Date? = nil,
+        monitoredDirectoryPaths: [String]? = nil,
+        configurationUpdatedAt: Date? = nil,
+        lastMenuRequestedAt: Date? = nil,
+        unavailableBookmarkPaths: [String]? = nil
     ) {
         self.pid = pid
         self.version = version
@@ -1207,6 +1291,10 @@ struct FinderExtensionRuntimeSnapshot: Codable, Equatable {
         self.monitoringPolicyVersion = monitoringPolicyVersion
         self.lastAccessResult = lastAccessResult
         self.lastAccessAt = lastAccessAt
+        self.monitoredDirectoryPaths = monitoredDirectoryPaths
+        self.configurationUpdatedAt = configurationUpdatedAt
+        self.lastMenuRequestedAt = lastMenuRequestedAt
+        self.unavailableBookmarkPaths = unavailableBookmarkPaths
     }
 
 }
@@ -1297,6 +1385,19 @@ struct FullDiskAccessRecoveryRequest: Codable, Equatable {
 
     mutating func markFailed() {
         phase = .failed
+    }
+
+    func retry(
+        previousApplicationPID: Int32? = ProcessInfo.processInfo.processIdentifier,
+        previousFinderExtensionPID: Int32? = nil,
+        settingsOpenedAt: Date = .now
+    ) -> Self? {
+        guard phase == .failed || phase == .completed else { return nil }
+        return Self(
+            settingsOpenedAt: settingsOpenedAt,
+            previousApplicationPID: previousApplicationPID,
+            previousFinderExtensionPID: previousFinderExtensionPID
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1478,22 +1579,23 @@ enum FinderExtensionPolicy {
             "-i", bundleIdentifier
         ])
 
-        return await status(bundleIdentifier: bundleIdentifier, runProcess: runProcess)
+        return await status(bundleIdentifier: bundleIdentifier, appBundleURL: appBundleURL, runProcess: runProcess)
     }
 
     static func status(
         bundleIdentifier: String = AppConstants.finderExtensionBundleIdentifier,
+        appBundleURL: URL = Bundle.main.bundleURL,
         runProcess: ProcessRunner = runProcess
     ) async -> FinderExtensionStatus {
         guard let result = runProcess(URL(fileURLWithPath: "/usr/bin/pluginkit"), [
-            "-m",
+            "-m", "-A", "-D", "-v",
             "-p", "com.apple.FinderSync",
             "-i", bundleIdentifier
         ]), result.status == 0 else {
             return .unknown
         }
 
-        return status(fromPlugInKitOutput: result.output)
+        return status(fromPlugInKitOutput: result.output, appBundleURL: appBundleURL)
     }
 
     static func bundledExtensionURL(in appBundleURL: URL) -> URL? {
@@ -1528,10 +1630,28 @@ enum FinderExtensionPolicy {
         return (process.terminationStatus, output)
     }
 
-    static func status(fromPlugInKitOutput output: String) -> FinderExtensionStatus {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let firstCharacter = trimmed.first else {
+    static func status(
+        fromPlugInKitOutput output: String,
+        appBundleURL: URL? = nil
+    ) -> FinderExtensionStatus {
+        let lines = output.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        let matchingLines: [String]
+        if let appBundleURL {
+            let appPath = MonitoredFolderPolicy.canonicalPath(for: appBundleURL)
+            let extensionPath = appPath + "/Contents/PlugIns/ClickMateFinderExtension.appex"
+            matchingLines = lines.filter { line in
+                guard let pathStart = line.firstIndex(of: "/") else { return false }
+                let path = MonitoredFolderPolicy.canonicalPath(for: URL(fileURLWithPath: String(line[pathStart...])))
+                return path == appPath || path == extensionPath
+            }
+        } else {
+            matchingLines = lines.filter { !$0.isEmpty }
+        }
+        guard let firstCharacter = matchingLines.first?.first else {
             return .notRegistered
+        }
+        if appBundleURL != nil, Set(matchingLines.compactMap(\.first)).count > 1 {
+            return .unknown
         }
 
         switch firstCharacter {
@@ -1549,15 +1669,21 @@ struct SecurityScopedFolderAccess {
     struct ScopedAccess {
         let url: URL
         private let didStartAccessing: Bool
+        private let stopHandler: (URL) -> Void
 
-        fileprivate init(url: URL, didStartAccessing: Bool) {
+        init(
+            url: URL,
+            didStartAccessing: Bool,
+            stopAccessing: @escaping (URL) -> Void = { $0.stopAccessingSecurityScopedResource() }
+        ) {
             self.url = url
             self.didStartAccessing = didStartAccessing
+            self.stopHandler = stopAccessing
         }
 
         func stopAccessing() {
             guard didStartAccessing else { return }
-            url.stopAccessingSecurityScopedResource()
+            stopHandler(url)
         }
 
         func resolvedURL(for requestedURL: URL) -> URL {
@@ -1610,6 +1736,24 @@ struct SecurityScopedFolderAccess {
         }
     }
 
+    /// Finder monitoring must hold an actual sandbox grant, rather than merely a
+    /// resolved transport bookmark or an assumed Full Disk Access setting.
+    static func finderSyncScopedAccess(from bookmarkData: Data) -> ScopedAccess? {
+        do {
+            var isStale = false
+            let url = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope, .withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            guard !isStale, url.startAccessingSecurityScopedResource() else { return nil }
+            return ScopedAccess(url: url, didStartAccessing: true)
+        } catch {
+            return nil
+        }
+    }
+
     static func scopedAccess(toCurrentProcessURL url: URL) -> ScopedAccess? {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         guard didStartAccessing else { return nil }
@@ -1630,6 +1774,62 @@ struct SecurityScopedFolderAccess {
         } catch {
             return nil
         }
+    }
+}
+
+/// Owns each security-scoped grant for as long as Finder monitors its directory.
+/// Refresh acquires replacements before releasing the previous set.
+final class FinderSyncFolderAccess {
+    typealias BookmarkAccessProvider = (Data) -> SecurityScopedFolderAccess.ScopedAccess?
+    private let bookmarkAccessProvider: BookmarkAccessProvider
+    private let directoryIsAvailable: (URL) -> Bool
+    private var activeAccess: [SecurityScopedFolderAccess.ScopedAccess] = []
+    private(set) var directoryURLs: Set<URL> = []
+    private(set) var unavailableBookmarkPaths: [String] = []
+
+    init(
+        bookmarkAccessProvider: @escaping BookmarkAccessProvider = SecurityScopedFolderAccess.finderSyncScopedAccess,
+        directoryIsAvailable: @escaping (URL) -> Bool = { url in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        }
+    ) {
+        self.bookmarkAccessProvider = bookmarkAccessProvider
+        self.directoryIsAvailable = directoryIsAvailable
+    }
+
+    deinit {
+        activeAccess.forEach { $0.stopAccessing() }
+    }
+
+    func refresh(preferences: ClickMatePreferences) {
+        var replacementAccess: [SecurityScopedFolderAccess.ScopedAccess] = []
+        var urls: Set<URL> = []
+        var unavailable: Set<String> = []
+        for path in Set(preferences.monitoredFolderPaths) {
+            guard let bookmark = preferences.monitoredFolderBookmarks[path],
+                  let access = bookmarkAccessProvider(bookmark)
+            else {
+                unavailable.insert(path)
+                continue
+            }
+            let resolvedPath = MonitoredFolderPolicy.canonicalPath(for: access.url)
+            guard !MonitoredFolderPolicy.isBlockedSystemPath(resolvedPath),
+                  !MonitoredFolderPolicy.isUnsafeFinderSyncRoot(resolvedPath),
+                  directoryIsAvailable(access.url)
+            else {
+                access.stopAccessing()
+                unavailable.insert(path)
+                continue
+            }
+            replacementAccess.append(access)
+            urls.insert(access.url.standardizedFileURL)
+        }
+        let previousAccess = activeAccess
+        activeAccess = replacementAccess
+        directoryURLs = urls
+        unavailableBookmarkPaths = unavailable.sorted()
+        previousAccess.forEach { $0.stopAccessing() }
     }
 }
 

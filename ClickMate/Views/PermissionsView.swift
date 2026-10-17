@@ -4,14 +4,19 @@ import SwiftUI
 struct PermissionsView: View {
     @EnvironmentObject private var store: PreferencesStore
     @ObservedObject private var helperService: QuickFeatureHelperService
+    @ObservedObject private var directoryAccess: DirectoryAccessMonitor
     @State private var statusMessage = L10n.string("permissions.extensionStatusUnknown")
     @State private var trials: [FeatureGuideFeature: FeatureTrialState] = [:]
     @State private var trialDetails: [FeatureGuideFeature: String] = [:]
     @State private var cutTrial: FeatureTrialFiles?
     @State private var screenshotTrialStarting = false
+    @State private var redirectedDefaultDirectories: [URL] = []
+    @State private var showsDetailedDiagnostics: Bool
 
-    init(helperService: QuickFeatureHelperService = .shared) {
+    init(helperService: QuickFeatureHelperService = .shared, directoryAccess: DirectoryAccessMonitor = .shared, showsDetailedDiagnostics: Bool = false) {
         self.helperService = helperService
+        self.directoryAccess = directoryAccess
+        _showsDetailedDiagnostics = State(initialValue: showsDetailedDiagnostics)
     }
 
     var body: some View {
@@ -42,7 +47,7 @@ struct PermissionsView: View {
                         onTrialResult: recordTrialResult,
                         onOpenTrialDestination: openCutTrialDestination
                     )
-                    DisclosureGroup(L10n.string("guide.diagnostics")) {
+                    DisclosureGroup(L10n.string("guide.diagnostics"), isExpanded: $showsDetailedDiagnostics) {
                     VStack(alignment: .leading, spacing: 12) {
                     permissionStep(
                         number: 1,
@@ -169,6 +174,7 @@ struct PermissionsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
+                        finderRuntimeDiagnostics
                         if !store.preferences.hasAcknowledgedFinderMonitoringMigration {
                             HStack(alignment: .top) {
                                 Text(L10n.string("permissions.finderMonitoringMigration"))
@@ -205,7 +211,7 @@ struct PermissionsView: View {
                                 refreshPermissionStatuses()
                             }
                             .disabled(helperService.isApplyingDiskAccessChanges)
-                            if helperService.diskAccessNeedsRelaunch,
+                            if helperService.diskAccessNeedsRelaunch || helperService.fullDiskAccessRecoveryPhase == .failed,
                                helperService.isFinderRuntimeChannelAvailable {
                                 Button(L10n.string("permissions.restartApplication")) {
                                     helperService.applyFullDiskAccessChanges()
@@ -224,6 +230,7 @@ struct PermissionsView: View {
                                     ? Color.orange
                                     : Color.secondary
                             )
+                        directoryAccessDiagnostics
                     }
 
                     permissionStep(
@@ -292,13 +299,33 @@ struct PermissionsView: View {
                         titleKey: "permissions.stepManualFoldersTitle",
                         systemImage: "folder.badge.plus",
                         statusText: L10n.string("permissions.manualFoldersStatus", store.preferences.monitoredFolderPaths.count),
-                        statusIsGood: !store.preferences.monitoredFolderPaths.isEmpty
+                        statusIsGood: manualFoldersHaveVerifiedCoverage
                     ) {
                         Text(L10n.string("permissions.manualFoldersDescription"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                        Button(L10n.string("permissions.addFolder")) {
-                            addFolder()
+                        HStack {
+                            Button(L10n.string("permissions.addFolder")) {
+                                addFolder()
+                            }
+                            if let directory = redirectedDefaultDirectories.first {
+                                Button(L10n.string("permissions.chooseRedirectedFolders")) {
+                                    addFolder(initialDirectory: directory)
+                                }
+                            }
+                        }
+                        if !redirectedDefaultDirectories.isEmpty {
+                            Text(L10n.string("permissions.redirectedFoldersDescription"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(redirectedDefaultDirectories.map(\.path).joined(separator: "\n"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if !helperService.isFinderRuntimeChannelAvailable {
+                            Text(L10n.string("permissions.customFolderSyncUnavailable"))
+                                .font(.caption)
+                                .foregroundStyle(.orange)
                         }
                     }
 
@@ -315,6 +342,7 @@ struct PermissionsView: View {
         }
         .task {
             guard !store.storageState.isCorrupt else { return }
+            redirectedDefaultDirectories = MonitoredFolderPolicy.redirectedDefaultDirectoryURLs()
             helperService.refreshStatusesForPresentation()
         }
         .onDisappear {
@@ -327,7 +355,6 @@ struct PermissionsView: View {
         FeatureReadinessSnapshot(
             finderStatus: helperService.finderExtensionStatus,
             finderNeedsRestart: helperService.finderExtensionNeedsPolicyReload || helperService.diskAccessNeedsRelaunch,
-            finderAccess: helperService.finderExtensionRuntimeSnapshot?.lastAccessResult,
             backgroundServiceEnabled: store.preferences.backgroundServiceEnabled,
             helperRunning: helperService.isRuntimeRunning,
             helperFailed: helperService.lastError != nil,
@@ -366,8 +393,6 @@ struct PermissionsView: View {
                 reloadFinderExtension()
             } else if helperService.diskAccessNeedsRelaunch {
                 helperService.applyFullDiskAccessChanges()
-            } else if helperService.finderExtensionRuntimeSnapshot?.lastAccessResult == .permissionDenied {
-                helperService.openFullDiskAccessSettings()
             } else {
                 openExtensionsSettings()
             }
@@ -407,19 +432,19 @@ struct PermissionsView: View {
                 trials[feature] = .cancelled
                 return
             }
-            let accepted = MonitoredFolderPolicy.acceptedAndRejectedPaths(from: [url]).accepted
-            guard let path = accepted.first else {
+            let result = saveAuthorizedFolders([url])
+            guard let directory = result.accepted.first else {
                 trials[feature] = .failed
-                trialDetails[feature] = L10n.string("permissions.blockedFolder")
+                trialDetails[feature] = statusMessage
                 return
             }
-            store.preferences.monitoredFolderPaths = appendUniquePaths([path], to: store.preferences.monitoredFolderPaths)
-            if let bookmark = try? SecurityScopedFolderAccess.bookmarkData(for: url) {
-                store.preferences.monitoredFolderBookmarks[path] = bookmark
+            guard persistAndSynchronizeFolders() else {
+                trials[feature] = .failed
+                trialDetails[feature] = statusMessage
+                return
             }
-            store.waitForPendingSaves()
-            trials[feature] = NSWorkspace.shared.open(url) ? .instructions : .failed
-            trialDetails[feature] = L10n.string("guide.finderInstructions", url.lastPathComponent)
+            trials[feature] = NSWorkspace.shared.open(directory) ? .instructions : .failed
+            trialDetails[feature] = L10n.string("guide.finderInstructions", directory.lastPathComponent)
         case .finderCut:
             cleanUpCutTrial()
             do {
@@ -505,7 +530,11 @@ struct PermissionsView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            if store.preferences.monitoredFolderBookmarks[path] == nil {
+                            if helperService.finderExtensionRuntimeSnapshot?.unavailableBookmarkPaths?.contains(path) == true {
+                                Text(L10n.string("permissions.bookmarkUnavailable"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            } else if store.preferences.monitoredFolderBookmarks[path] == nil {
                                 Text(L10n.string("permissions.bookmarkMissing"))
                                     .font(.caption2)
                                     .foregroundStyle(.orange)
@@ -593,36 +622,85 @@ struct PermissionsView: View {
         }
     }
 
-    private func addFolder() {
+    private var manualFoldersHaveVerifiedCoverage: Bool? {
+        guard !store.preferences.monitoredFolderPaths.isEmpty,
+              let monitored = helperService.finderExtensionRuntimeSnapshot?.monitoredDirectoryPaths
+        else { return nil }
+        return Set(store.preferences.monitoredFolderPaths).isSubset(of: Set(monitored))
+    }
+
+    private func addFolder(initialDirectory: URL? = nil) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
+        panel.directoryURL = initialDirectory
+        if initialDirectory != nil {
+            panel.message = L10n.string("permissions.redirectedFoldersDescription")
+        }
         if panel.runModal() == .OK {
-            let result = MonitoredFolderPolicy.acceptedAndRejectedPaths(from: panel.urls)
-            store.preferences.monitoredFolderPaths = appendUniquePaths(
-                result.accepted,
-                to: store.preferences.monitoredFolderPaths
-            )
-            for url in panel.urls {
-                let path = MonitoredFolderPolicy.canonicalPath(for: url)
-                guard result.accepted.contains(path),
-                      let bookmarkData = try? SecurityScopedFolderAccess.bookmarkData(for: url)
-                else { continue }
-                store.preferences.monitoredFolderBookmarks[path] = bookmarkData
-            }
-            store.preferences.monitoredFolderBookmarks = store.preferences.monitoredFolderBookmarks.filter {
-                store.preferences.monitoredFolderPaths.contains($0.key)
-            }
-
-            if result.accepted.isEmpty, !result.rejected.isEmpty {
+            let result = saveAuthorizedFolders(panel.urls)
+            guard persistAndSynchronizeFolders() else { return }
+            if result.authorizationFailed {
+                statusMessage = L10n.string("permissions.bookmarkSaveFailed")
+            } else if result.accepted.isEmpty, result.rejectedCount > 0 {
                 statusMessage = L10n.string("permissions.blockedFolder")
-            } else if result.rejected.isEmpty {
-                statusMessage = L10n.string("permissions.monitoringUpdated")
-            } else {
-                statusMessage = L10n.string("permissions.monitoringUpdatedWithSkipped", result.rejected.count)
+            } else if result.rejectedCount > 0 {
+                statusMessage = L10n.string("permissions.monitoringUpdatedWithSkipped", result.rejectedCount)
             }
         }
+    }
+
+    private func saveAuthorizedFolders(_ urls: [URL]) -> (accepted: [URL], rejectedCount: Int, authorizationFailed: Bool) {
+        var accepted: [URL] = []
+        var rejectedCount = 0
+        var authorizationFailed = false
+        for selectedURL in urls {
+            let didStartAccessing = selectedURL.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing { selectedURL.stopAccessingSecurityScopedResource() }
+            }
+            // The panel grants access before canonicalization and metadata checks.
+            // Store the physical target so redirected defaults and explicit folders agree.
+            let directory = URL(fileURLWithPath: MonitoredFolderPolicy.canonicalPath(for: selectedURL), isDirectory: true)
+            guard MonitoredFolderPolicy.isAllowedExplicitMonitoringPath(directory.path),
+                  MonitoredFolderPolicy.acceptedAndRejectedPaths(from: [directory]).accepted.contains(directory.path) else {
+                rejectedCount += 1
+                continue
+            }
+            guard let bookmark = try? SecurityScopedFolderAccess.bookmarkData(for: directory) else {
+                authorizationFailed = true
+                continue
+            }
+            store.preferences.monitoredFolderBookmarks[directory.path] = bookmark
+            accepted.append(directory)
+        }
+        store.preferences.monitoredFolderPaths = appendUniquePaths(accepted.map(\.path), to: store.preferences.monitoredFolderPaths)
+        store.preferences.monitoredFolderBookmarks = store.preferences.monitoredFolderBookmarks.filter {
+            store.preferences.monitoredFolderPaths.contains($0.key)
+        }
+        if accepted.isEmpty {
+            statusMessage = L10n.string(authorizationFailed ? "permissions.bookmarkSaveFailed" : "permissions.blockedFolder")
+        }
+        return (accepted, rejectedCount, authorizationFailed)
+    }
+
+    @discardableResult
+    private func persistAndSynchronizeFolders() -> Bool {
+        store.waitForPendingSaves()
+        switch store.storageState {
+        case .firstRun, .loaded: break
+        case .corrupt, .saveFailure:
+            statusMessage = store.storageState.message ?? L10n.string("settingsData.saveFailed")
+            return false
+        }
+        if !helperService.isFinderRuntimeChannelAvailable,
+           !FinderFolderSyncStore.publish(preferences: store.preferences) {
+            statusMessage = L10n.string("permissions.folderSyncFailed")
+            return false
+        }
+        statusMessage = L10n.string("permissions.folderSyncRequested")
+        return true
     }
 
     private func appendUniquePaths(_ newPaths: [String], to existingPaths: [String]) -> [String] {
@@ -638,7 +716,7 @@ struct PermissionsView: View {
     private func removeFolder(_ path: String) {
         store.preferences.monitoredFolderPaths.removeAll { $0 == path }
         store.preferences.monitoredFolderBookmarks.removeValue(forKey: path)
-        statusMessage = L10n.string("permissions.monitoringUpdated")
+        persistAndSynchronizeFolders()
     }
 
     private func removeFolders(at offsets: IndexSet) {
@@ -647,7 +725,7 @@ struct PermissionsView: View {
         for path in paths {
             store.preferences.monitoredFolderBookmarks.removeValue(forKey: path)
         }
-        statusMessage = L10n.string("permissions.monitoringUpdated")
+        persistAndSynchronizeFolders()
     }
 
     private func reloadFinderExtension() {
@@ -758,14 +836,7 @@ struct PermissionsView: View {
 
     private var diskAccessStatusIsGood: Bool? {
         guard helperService.isFinderRuntimeChannelAvailable else { return nil }
-        switch helperService.fullDiskAccessRecoveryPhase {
-        case .completed:
-            return true
-        case .failed:
-            return false
-        case .waitingForReturn, .relaunchScheduled, .reloadingExtension, nil:
-            return nil
-        }
+        return QuickFeatureHelperService.fullDiskAccessStatusIsGood(for: helperService.fullDiskAccessRecoveryPhase)
     }
 
     private var finderExtensionStatusTitle: String {
@@ -808,18 +879,60 @@ struct PermissionsView: View {
         if let message = helperService.diskAccessRecoveryMessage {
             return message
         }
-        guard let snapshot = helperService.finderExtensionRuntimeSnapshot else {
-            return L10n.string("permissions.fullDiskAccessExtensionNotReporting")
+        return L10n.string("permissions.fullDiskAccessManualVerificationDetail")
+    }
+
+    private var finderRuntimeDiagnostics: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string(helperService.isFinderRuntimeChannelAvailable
+                ? "permissions.sharedChannelAvailable" : "permissions.sharedChannelUnavailable"))
+            if let snapshot = helperService.finderExtensionRuntimeSnapshot {
+                if let paths = snapshot.monitoredDirectoryPaths {
+                    Text(L10n.string("permissions.monitoredCoverage", paths.joined(separator: "\n")))
+                } else {
+                    Text(L10n.string("permissions.monitoredCoverageUnknown"))
+                }
+                if let updatedAt = snapshot.configurationUpdatedAt {
+                    Text(L10n.string("permissions.configurationUpdated", updatedAt.formatted(date: .abbreviated, time: .standard)))
+                }
+                if let menuRequestedAt = snapshot.lastMenuRequestedAt {
+                    Text(L10n.string("permissions.lastMenuRequest", menuRequestedAt.formatted(date: .abbreviated, time: .standard)))
+                }
+            } else {
+                Text(L10n.string("permissions.monitoredCoverageUnknown"))
+            }
         }
-        switch snapshot.lastAccessResult {
-        case .success:
-            return L10n.string("permissions.fullDiskAccessLastOperationSucceeded")
-        case .permissionDenied:
-            return L10n.string("permissions.fullDiskAccessLastOperationDenied")
-        case .failed:
-            return L10n.string("permissions.fullDiskAccessLastOperationFailed")
-        case nil:
-            return L10n.string("permissions.fullDiskAccessExtensionRunning")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private var directoryAccessDiagnostics: some View {
+        if let observation = directoryAccess.latest {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.string("permissions.directoryAccessDetails", observation.directoryURL.path,
+                    observation.processIdentifier, observation.observedAt.formatted(date: .abbreviated, time: .standard)))
+                Text(L10n.string(directoryAccessResultKey(observation.result)))
+                if let domain = observation.errorDomain, let code = observation.errorCode {
+                    Text("\(domain) (\(code))")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(observation.result == .success ? Color.secondary : Color.orange)
+            .textSelection(.enabled)
+        } else {
+            Text(L10n.string("permissions.directoryAccessUnverified"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func directoryAccessResultKey(_ result: FinderExtensionAccessResult) -> String {
+        switch result {
+        case .success: "permissions.directoryAccessSucceeded"
+        case .permissionDenied: "permissions.directoryAccessDenied"
+        case .failed: "permissions.directoryAccessFailed"
         }
     }
 }

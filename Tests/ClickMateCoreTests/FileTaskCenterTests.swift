@@ -14,6 +14,39 @@ final class FileTaskCenterTests: XCTestCase {
         XCTAssertEqual(clipboard, try FileHasher.hashes(for: [source], algorithm: .sha256))
     }
 
+    func testCompletedHashReportsActualDirectoryAccessEvenIfClipboardFails() async throws {
+        let source = try makeFile()
+        let monitor = DirectoryAccessMonitor()
+        let center = FileTaskCenter(presentsWindows: false, clipboardWriter: { _ in false }, accessMonitor: monitor)
+        center.hash([source], algorithm: .sha256)
+        XCTAssertNil(monitor.latest)
+        try await waitForTasks(center)
+        XCTAssertEqual(center.items.first?.state, .failed)
+        XCTAssertEqual(monitor.latest?.result, .success)
+        XCTAssertEqual(monitor.latest?.directoryURL, source.deletingLastPathComponent())
+    }
+
+    func testMissingHashInputReportsFailureWithoutClaimingPermissionDenied() async throws {
+        let source = try makeFile().appendingPathExtension("missing")
+        let monitor = DirectoryAccessMonitor()
+        let center = FileTaskCenter(presentsWindows: false, accessMonitor: monitor)
+        center.hash([source], algorithm: .md5)
+        try await waitForTasks(center)
+        XCTAssertEqual(monitor.latest?.result, .failed)
+        XCTAssertNotNil(monitor.latest?.errorDomain)
+        XCTAssertEqual(monitor.latest?.directoryURL, source.deletingLastPathComponent())
+    }
+
+    func testCancelledHashDoesNotPublishAccessEvidence() async throws {
+        let source = try makeFile()
+        let monitor = DirectoryAccessMonitor()
+        let center = FileTaskCenter(presentsWindows: false, accessMonitor: monitor)
+        center.hash([source], algorithm: .md5)
+        center.items.first?.cancellation.cancel()
+        try await waitForTasks(center)
+        XCTAssertNil(monitor.latest)
+    }
+
     func testPartialFailureKeepsClipboardAndOffersSuccessfulResults() async throws {
         let source = try makeFile()
         var clipboard = "before"

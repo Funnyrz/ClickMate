@@ -137,6 +137,7 @@ final class ArchiveEditorModel: ObservableObject {
         let newAccess = url.startAccessingSecurityScopedResource()
         do {
             let opened = try ZipArchiveEditor.open(url)
+            DirectoryAccessMonitor.shared.record(directoryURL: url.deletingLastPathComponent())
             closeArchive()
             archive = opened
             hasSecurityScopedAccess = newAccess
@@ -148,6 +149,7 @@ final class ArchiveEditorModel: ObservableObject {
             return true
         } catch {
             if newAccess { url.stopAccessingSecurityScopedResource() }
+            DirectoryAccessMonitor.shared.record(directoryURL: url.deletingLastPathComponent(), error: error)
             errorMessage = error.localizedDescription
             return false
         }
@@ -236,8 +238,10 @@ final class ArchiveEditorModel: ObservableObject {
             originalText = editorText
             tree = Self.makeTree(from: updated.entries)
             errorMessage = nil
+            DirectoryAccessMonitor.shared.record(directoryURL: archive.url.deletingLastPathComponent())
             return true
         } catch {
+            DirectoryAccessMonitor.shared.record(directoryURL: archive.url.deletingLastPathComponent(), error: error)
             errorMessage = error.localizedDescription
             return false
         }

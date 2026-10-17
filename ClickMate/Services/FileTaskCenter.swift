@@ -49,11 +49,17 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
     private var window: NSWindow?
     private let presentsWindows: Bool
     private let clipboardWriter: (String) -> Bool
+    private let accessMonitor: DirectoryAccessMonitor
     private var receipts: [UUID: FileActions.MoveReceipt] = [:]
 
-    init(presentsWindows: Bool = true, clipboardWriter: @escaping (String) -> Bool = FileActions.writeToPasteboard) {
+    init(
+        presentsWindows: Bool = true,
+        clipboardWriter: @escaping (String) -> Bool = FileActions.writeToPasteboard,
+        accessMonitor: DirectoryAccessMonitor = .shared
+    ) {
         self.presentsWindows = presentsWindows
         self.clipboardWriter = clipboardWriter
+        self.accessMonitor = accessMonitor
         super.init()
     }
 
@@ -128,6 +134,7 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
                         }
                     }
                 }.value
+                accessMonitor.record(directoryURL: output.deletingLastPathComponent())
                 update(job.id) {
                     $0.state = .succeeded
                     $0.detail = output.lastPathComponent
@@ -137,6 +144,7 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
             } catch is CancellationError {
                 update(job.id) { $0.state = .cancelled; $0.detail = L10n.string("tasks.cancelled") }
             } catch {
+                recordFailure(error, fallbackDirectory: urls.first?.deletingLastPathComponent())
                 update(job.id) { $0.state = .failed; $0.detail = error.localizedDescription }
             }
         }
@@ -164,6 +172,14 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
                     }
                 }.value
                 guard !job.cancellation.isCancelled else { throw CancellationError() }
+                // Publish failures last so a successful neighbor cannot hide a denied target.
+                for item in result.items.filter(\.succeeded) {
+                    accessMonitor.record(directoryURL: item.source.deletingLastPathComponent())
+                }
+                for item in result.items.filter({ !$0.succeeded }) {
+                    let failure = item.accessFailure ?? FileAccessFailure(CocoaError(.fileReadUnknown))
+                    accessMonitor.record(directoryURL: failure.directoryURL(fallback: item.source.deletingLastPathComponent()), failure: failure)
+                }
                 let copied = result.succeeded && clipboardWriter(result.text)
                 update(job.id) {
                     $0.state = result.succeeded ? (copied ? .succeeded : .failed) : (result.successfulText.isEmpty ? .failed : .partial)
@@ -175,6 +191,7 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
             } catch is CancellationError {
                 update(job.id) { $0.state = .cancelled; $0.fraction = nil; $0.detail = L10n.string("tasks.cancelled") }
             } catch {
+                recordFailure(error, fallbackDirectory: urls.first?.deletingLastPathComponent())
                 update(job.id) { $0.state = .failed; $0.detail = error.localizedDescription }
             }
         }
@@ -213,6 +230,16 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     private func completeBatch(_ job: FileTaskItem, result: FileActions.BatchResult) {
+        for item in result.successes {
+            accessMonitor.record(directoryURL: item.sourceURL.deletingLastPathComponent())
+            if let destination = item.destinationURL {
+                accessMonitor.record(directoryURL: destination.deletingLastPathComponent())
+            }
+        }
+        for item in result.failures {
+            let failure = item.accessFailure ?? FileAccessFailure(CocoaError(.fileReadUnknown))
+            accessMonitor.record(directoryURL: failure.directoryURL(fallback: item.sourceURL.deletingLastPathComponent()), failure: failure)
+        }
         let successes = result.items.filter(\.succeeded).count
         let failures = result.items.count - successes
         if let receipt = result.moveReceipt { receipts[job.id] = receipt }
@@ -231,6 +258,13 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
         return Set(urls.map { $0.deletingLastPathComponent() }).compactMap {
             DiskAccessPolicy.scopedOrDirectAccess(containing: $0, preferences: preferences)
         }
+    }
+
+    private func recordFailure(_ error: Error, fallbackDirectory: URL?) {
+        let failure = FileAccessFailure(error)
+        guard let fallbackDirectory else { return }
+        let directory = failure.directoryURL(fallback: fallbackDirectory)
+        accessMonitor.record(directoryURL: directory, error: error)
     }
 }
 

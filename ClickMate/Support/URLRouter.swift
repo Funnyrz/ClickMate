@@ -128,6 +128,7 @@ enum URLRouter {
         do {
             let writableDirectory = access.resolvedURL(for: directory)
             let createdURL = try FileCreator.createFile(from: template, in: writableDirectory)
+            DirectoryAccessMonitor.shared.record(directoryURL: writableDirectory)
             logger.info("Create file route created \(createdURL.path, privacy: .public)")
             NSWorkspace.shared.activateFileViewerSelecting([createdURL])
             ActionNotifier.notify(
@@ -136,6 +137,9 @@ enum URLRouter {
                 bodyArguments: [createdURL.lastPathComponent]
             )
         } catch {
+            DirectoryAccessMonitor.shared.record(directoryURL: directory, error: error)
+            let failure = error as NSError
+            logger.error("Create file failed domain=\(failure.domain, privacy: .public), code=\(failure.code)")
             ActionNotifier.notify(titleKey: "notification.failureTitle", bodyKey: "notification.createFailed")
         }
     }

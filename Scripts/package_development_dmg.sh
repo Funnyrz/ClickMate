@@ -13,14 +13,40 @@ APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/ClickMate.app"
 PACKAGED_APP="$DMG_ROOT/ClickMate.app"
 ARCHITECTURES=(arm64 x86_64)
 
-DEVELOPMENT_TEAM="${CLICKMATE_DEVELOPMENT_TEAM:-}"
-SIGNING_IDENTITY="${CLICKMATE_DEVELOPMENT_IDENTITY:-Apple Development}"
-
-if [[ -z "$DEVELOPMENT_TEAM" ]]; then
-  echo "error: CLICKMATE_DEVELOPMENT_TEAM is required" >&2
-  exit 1
+IDENTITY_VERIFIER="$ROOT_DIR/Scripts/verify_signing_identity.py"
+IDENTITY_ARGS=()
+if [[ -n "${CLICKMATE_DEVELOPMENT_IDENTITY:-}" ]]; then
+  IDENTITY_ARGS+=(--identity "$CLICKMATE_DEVELOPMENT_IDENTITY")
+fi
+if [[ -n "${CLICKMATE_DEVELOPMENT_TEAM:-}" ]]; then
+  IDENTITY_ARGS+=(--team "$CLICKMATE_DEVELOPMENT_TEAM")
+fi
+IDENTITY_DETAILS="$(/usr/bin/python3 "$IDENTITY_VERIFIER" identity ${IDENTITY_ARGS[@]+"${IDENTITY_ARGS[@]}"})"
+IFS=$'\t' read -r SIGNING_IDENTITY DEVELOPMENT_TEAM SIGNING_NAME <<<"$IDENTITY_DETAILS"
+echo "==> Using $SIGNING_NAME, certificate Team ID $DEVELOPMENT_TEAM"
+PROVISIONING_ARGS=()
+if [[ "${CLICKMATE_ALLOW_PROVISIONING_UPDATES:-0}" == "1" ]]; then
+  PROVISIONING_ARGS=(-allowProvisioningUpdates)
+else
+  /usr/bin/python3 "$IDENTITY_VERIFIER" profiles --team "$DEVELOPMENT_TEAM" --certificate "$SIGNING_IDENTITY"
 fi
 
+# Preserve a previously verified build before the clean build removes its directory.
+PREVIOUS_APP="${CLICKMATE_PREVIOUS_APP:-}"
+BASELINE_DIR=""
+trap '[[ -z "$BASELINE_DIR" ]] || rm -rf "$BASELINE_DIR"' EXIT
+if [[ -n "$PREVIOUS_APP" ]]; then
+  /usr/bin/python3 "$IDENTITY_VERIFIER" identity-check "$PREVIOUS_APP" --team "$DEVELOPMENT_TEAM" --kind 'Apple Development'
+elif [[ -d "$APP_PATH" ]] && /usr/bin/python3 "$IDENTITY_VERIFIER" identity-check "$APP_PATH" --team "$DEVELOPMENT_TEAM" --kind 'Apple Development' >/dev/null 2>&1; then
+  PREVIOUS_APP="$APP_PATH"
+elif [[ -d /Applications/ClickMate.app ]] && /usr/bin/python3 "$IDENTITY_VERIFIER" identity-check /Applications/ClickMate.app --team "$DEVELOPMENT_TEAM" --kind 'Apple Development' >/dev/null 2>&1; then
+  PREVIOUS_APP=/Applications/ClickMate.app
+fi
+if [[ -n "$PREVIOUS_APP" ]]; then
+  BASELINE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/clickmate-signing-baseline.XXXXXX")"
+  ditto "$PREVIOUS_APP" "$BASELINE_DIR/ClickMate.app"
+  PREVIOUS_APP="$BASELINE_DIR/ClickMate.app"
+fi
 
 echo "==> Cleaning development package output"
 rm -rf "$BUILD_DIR"
@@ -33,13 +59,13 @@ xcodebuild build \
   -configuration "$CONFIGURATION" \
   -destination 'generic/platform=macOS' \
   -derivedDataPath "$DERIVED_DATA" \
-  -allowProvisioningUpdates \
+  ${PROVISIONING_ARGS[@]+"${PROVISIONING_ARGS[@]}"} \
   ARCHS="${ARCHITECTURES[*]}" \
   ONLY_ACTIVE_ARCH=NO \
   ENABLE_CODE_COVERAGE=NO \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
   CODE_SIGN_STYLE=Automatic \
-  CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+  CODE_SIGN_IDENTITY="Apple Development" \
   ENABLE_HARDENED_RUNTIME=YES
 
 if [[ ! -d "$APP_PATH" ]]; then
@@ -51,91 +77,27 @@ HELPER_PATH="$APP_PATH/Contents/Library/LoginItems/ClickMateHelper.app"
 EXTENSION_PATH="$APP_PATH/Contents/PlugIns/ClickMateFinderExtension.appex"
 
 BUNDLES=("$APP_PATH" "$HELPER_PATH" "$EXTENSION_PATH")
-EXPECTED_BUNDLE_IDS=(
-  "com.zxacn.clickmate"
-  "com.zxacn.clickmate.Helper"
-  "com.zxacn.clickmate.FinderExtension"
-)
-
-echo "==> Verifying identities, Team IDs, Bundle IDs, and architectures"
-for index in "${!BUNDLES[@]}"; do
-  bundle="${BUNDLES[$index]}"
-  expected_bundle_id="${EXPECTED_BUNDLE_IDS[$index]}"
-  info_plist="$bundle/Contents/Info.plist"
-  executable_name="$(plutil -extract CFBundleExecutable raw "$info_plist")"
+echo "==> Verifying Universal 2 architectures and release instrumentation"
+for bundle in "${BUNDLES[@]}"; do
+  executable_name="$(plutil -extract CFBundleExecutable raw "$bundle/Contents/Info.plist")"
   executable="$bundle/Contents/MacOS/$executable_name"
-  actual_bundle_id="$(plutil -extract CFBundleIdentifier raw "$info_plist")"
-  signature_details="$(codesign -dv --verbose=4 "$bundle" 2>&1)"
-  team_id="$(sed -n 's/^TeamIdentifier=//p' <<<"$signature_details")"
-  entitlements_plist="$BUILD_DIR/entitlements-$index.plist"
-  codesign -d --entitlements :- "$bundle" 2>/dev/null >"$entitlements_plist"
-
-  if [[ "$actual_bundle_id" != "$expected_bundle_id" ]]; then
-    echo "error: expected $expected_bundle_id, found $actual_bundle_id" >&2
-    exit 1
-  fi
-  if [[ -z "$team_id" || "$team_id" != "$DEVELOPMENT_TEAM" ]]; then
-    echo "error: $actual_bundle_id has Team ID '$team_id', expected '$DEVELOPMENT_TEAM'" >&2
-    exit 1
-  fi
-  if grep -q '^Signature=adhoc$' <<<"$signature_details"; then
-    echo "error: $actual_bundle_id is ad-hoc signed" >&2
-    exit 1
-  fi
-  if ! grep -q '^Authority=Apple Development:' <<<"$signature_details"; then
-    echo "error: $actual_bundle_id is not signed with an Apple Development certificate" >&2
-    exit 1
-  fi
-  if ! grep -q 'flags=.*runtime' <<<"$signature_details"; then
-    echo "error: $actual_bundle_id does not have hardened runtime enabled" >&2
-    exit 1
-  fi
   for architecture in "${ARCHITECTURES[@]}"; do
-    if ! lipo "$executable" -verify_arch "$architecture"; then
-      echo "error: executable is missing $architecture: $executable" >&2
-      exit 1
-    fi
+    lipo "$executable" -verify_arch "$architecture"
   done
   if otool -l "$executable" | grep -q '__LLVM_COV'; then
     echo "error: release executable contains code coverage instrumentation: $executable" >&2
     exit 1
   fi
-
-  if [[ "$actual_bundle_id" == "com.zxacn.clickmate" || "$actual_bundle_id" == "com.zxacn.clickmate.FinderExtension" ]]; then
-    expected_application_identifier="$DEVELOPMENT_TEAM.$actual_bundle_id"
-    application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$entitlements_plist" 2>/dev/null || true)"
-    entitlement_team_id="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.team-identifier' "$entitlements_plist" 2>/dev/null || true)"
-    app_group="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$entitlements_plist" 2>/dev/null || true)"
-    provisioning_profile="$bundle/Contents/embedded.provisionprofile"
-
-    if [[ "$application_identifier" != "$expected_application_identifier" ]]; then
-      echo "error: $actual_bundle_id has application identifier '$application_identifier', expected '$expected_application_identifier'" >&2
-      exit 1
-    fi
-    if [[ "$entitlement_team_id" != "$DEVELOPMENT_TEAM" ]]; then
-      echo "error: $actual_bundle_id has entitlement Team ID '$entitlement_team_id', expected '$DEVELOPMENT_TEAM'" >&2
-      exit 1
-    fi
-    if [[ "$app_group" != "group.com.zxacn" ]]; then
-      echo "error: $actual_bundle_id is missing the expected App Group entitlement" >&2
-      exit 1
-    fi
-    if [[ ! -f "$provisioning_profile" ]]; then
-      echo "error: $actual_bundle_id is missing an embedded provisioning profile" >&2
-      exit 1
-    fi
-    profile_plist="$BUILD_DIR/provisioning-profile-$index.plist"
-    security cms -D -i "$provisioning_profile" >"$profile_plist"
-    provisioned_app_group="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$profile_plist" 2>/dev/null || true)"
-    if [[ "$provisioned_app_group" != "group.com.zxacn" ]]; then
-      echo "error: $actual_bundle_id provisioning profile does not authorize group.com.zxacn" >&2
-      echo "error: refusing to package a build that can trigger repeated 'access other app data' prompts" >&2
-      exit 1
-    fi
-  fi
 done
-
-codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+/usr/bin/python3 "$IDENTITY_VERIFIER" verify "$APP_PATH" --team "$DEVELOPMENT_TEAM" --kind 'Apple Development' --certificate "$SIGNING_IDENTITY"
+if [[ -n "$PREVIOUS_APP" ]]; then
+  /usr/bin/python3 "$IDENTITY_VERIFIER" compare "$PREVIOUS_APP" "$APP_PATH"
+else
+  echo "No valid previous development build found; this is the signing baseline."
+fi
+if [[ -n "${CLICKMATE_IDENTITY_COMPARISON_APP:-}" ]]; then
+  /usr/bin/python3 "$IDENTITY_VERIFIER" compare "$CLICKMATE_IDENTITY_COMPARISON_APP" "$APP_PATH" --require-code-change
+fi
 
 APP_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP_PATH/Contents/Info.plist")"
 BUILD_VERSION="$(plutil -extract CFBundleVersion raw "$APP_PATH/Contents/Info.plist")"
@@ -143,6 +105,7 @@ DMG_PATH="$OUTPUT_DIR/ClickMate-$APP_VERSION-$BUILD_VERSION-development.dmg"
 
 echo "==> Preparing DMG"
 ditto "$APP_PATH" "$PACKAGED_APP"
+/usr/bin/python3 "$IDENTITY_VERIFIER" verify "$PACKAGED_APP" --team "$DEVELOPMENT_TEAM" --kind 'Apple Development' --certificate "$SIGNING_IDENTITY"
 ln -s /Applications "$DMG_ROOT/Applications"
 hdiutil create \
   -volname "ClickMate Development" \

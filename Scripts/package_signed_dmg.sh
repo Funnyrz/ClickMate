@@ -18,6 +18,8 @@ ARCHITECTURES=(arm64 x86_64)
 DEVELOPMENT_TEAM="${CLICKMATE_DEVELOPMENT_TEAM:-}"
 SIGNING_IDENTITY="${CLICKMATE_SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${CLICKMATE_NOTARY_PROFILE:-}"
+IDENTITY_VERIFIER="$ROOT_DIR/Scripts/verify_signing_identity.py"
+PREVIOUS_APP="${CLICKMATE_PREVIOUS_APP:-}"
 
 if [[ -z "$DEVELOPMENT_TEAM" ]]; then
   echo "error: CLICKMATE_DEVELOPMENT_TEAM is required for App Group provisioning" >&2
@@ -42,6 +44,21 @@ fi
 if ! security find-identity -v -p codesigning | grep -Fq "\"$SIGNING_IDENTITY\""; then
   echo "error: signing identity was not found: $SIGNING_IDENTITY" >&2
   exit 1
+fi
+
+BASELINE_DIR=""
+trap '[[ -z "$BASELINE_DIR" ]] || rm -rf "$BASELINE_DIR"' EXIT
+if [[ -n "$PREVIOUS_APP" ]]; then
+  /usr/bin/python3 "$IDENTITY_VERIFIER" identity-check "$PREVIOUS_APP" --team "$DEVELOPMENT_TEAM" --kind 'Developer ID Application'
+elif [[ -d "$APP_PATH" ]] && /usr/bin/python3 "$IDENTITY_VERIFIER" identity-check "$APP_PATH" --team "$DEVELOPMENT_TEAM" --kind 'Developer ID Application' >/dev/null 2>&1; then
+  PREVIOUS_APP="$APP_PATH"
+elif [[ -d /Applications/ClickMate.app ]] && /usr/bin/python3 "$IDENTITY_VERIFIER" identity-check /Applications/ClickMate.app --team "$DEVELOPMENT_TEAM" --kind 'Developer ID Application' >/dev/null 2>&1; then
+  PREVIOUS_APP=/Applications/ClickMate.app
+fi
+if [[ -n "$PREVIOUS_APP" ]]; then
+  BASELINE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/clickmate-signing-baseline.XXXXXX")"
+  ditto "$PREVIOUS_APP" "$BASELINE_DIR/ClickMate.app"
+  PREVIOUS_APP="$BASELINE_DIR/ClickMate.app"
 fi
 
 echo "==> Cleaning signed package output"
@@ -87,108 +104,30 @@ fi
 HELPER_PATH="$APP_PATH/Contents/Library/LoginItems/ClickMateHelper.app"
 EXTENSION_PATH="$APP_PATH/Contents/PlugIns/ClickMateFinderExtension.appex"
 BUNDLES=("$APP_PATH" "$HELPER_PATH" "$EXTENSION_PATH")
-EXPECTED_BUNDLE_IDS=(
-  "com.zxacn.clickmate"
-  "com.zxacn.clickmate.Helper"
-  "com.zxacn.clickmate.FinderExtension"
-)
-
 APP_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP_PATH/Contents/Info.plist")"
-HELPER_VERSION="$(plutil -extract CFBundleShortVersionString raw "$HELPER_PATH/Contents/Info.plist")"
-EXTENSION_VERSION="$(plutil -extract CFBundleShortVersionString raw "$EXTENSION_PATH/Contents/Info.plist")"
-
-if [[ "$APP_VERSION" != "$HELPER_VERSION" || "$APP_VERSION" != "$EXTENSION_VERSION" ]]; then
-  echo "error: main app, Helper, and Finder Extension versions must match" >&2
-  exit 1
-fi
-
-echo "==> Verifying identities, entitlements, profiles, and architectures"
-for index in "${!BUNDLES[@]}"; do
-  bundle="${BUNDLES[$index]}"
-  expected_bundle_id="${EXPECTED_BUNDLE_IDS[$index]}"
-  info_plist="$bundle/Contents/Info.plist"
-  executable_name="$(plutil -extract CFBundleExecutable raw "$info_plist")"
+echo "==> Verifying Universal 2 architectures and release instrumentation"
+for bundle in "${BUNDLES[@]}"; do
+  executable_name="$(plutil -extract CFBundleExecutable raw "$bundle/Contents/Info.plist")"
   executable="$bundle/Contents/MacOS/$executable_name"
-  actual_bundle_id="$(plutil -extract CFBundleIdentifier raw "$info_plist")"
-  signature_details="$(codesign -dv --verbose=4 "$bundle" 2>&1)"
-  team_id="$(sed -n 's/^TeamIdentifier=//p' <<<"$signature_details")"
-  entitlements_plist="$BUILD_DIR/entitlements-$index.plist"
-  codesign -d --entitlements :- "$bundle" 2>/dev/null >"$entitlements_plist"
-
-  if [[ "$actual_bundle_id" != "$expected_bundle_id" ]]; then
-    echo "error: expected $expected_bundle_id, found $actual_bundle_id" >&2
-    exit 1
-  fi
-  if [[ -z "$team_id" || "$team_id" != "$DEVELOPMENT_TEAM" ]]; then
-    echo "error: $actual_bundle_id has Team ID '$team_id', expected '$DEVELOPMENT_TEAM'" >&2
-    exit 1
-  fi
-  if grep -q '^Signature=adhoc$' <<<"$signature_details"; then
-    echo "error: $actual_bundle_id is ad-hoc signed" >&2
-    exit 1
-  fi
-  if ! grep -q '^Authority=Developer ID Application:' <<<"$signature_details"; then
-    echo "error: $actual_bundle_id is not signed with Developer ID Application" >&2
-    exit 1
-  fi
-  if ! grep -Eq '^Runtime Version=|flags=.*runtime' <<<"$signature_details"; then
-    echo "error: hardened runtime is not enabled: $actual_bundle_id" >&2
-    exit 1
-  fi
   for architecture in "${ARCHITECTURES[@]}"; do
-    if ! lipo "$executable" -verify_arch "$architecture"; then
-      echo "error: executable is missing $architecture: $executable" >&2
-      exit 1
-    fi
+    lipo "$executable" -verify_arch "$architecture"
   done
   if otool -l "$executable" | grep -q '__LLVM_COV'; then
     echo "error: release executable contains code coverage instrumentation: $executable" >&2
     exit 1
   fi
-
-  if [[ "$actual_bundle_id" == "com.zxacn.clickmate" || "$actual_bundle_id" == "com.zxacn.clickmate.FinderExtension" ]]; then
-    expected_application_identifier="$DEVELOPMENT_TEAM.$actual_bundle_id"
-    application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$entitlements_plist" 2>/dev/null || true)"
-    entitlement_team_id="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.team-identifier' "$entitlements_plist" 2>/dev/null || true)"
-    app_group="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$entitlements_plist" 2>/dev/null || true)"
-    provisioning_profile="$bundle/Contents/embedded.provisionprofile"
-
-    if [[ "$application_identifier" != "$expected_application_identifier" ]]; then
-      echo "error: $actual_bundle_id has application identifier '$application_identifier', expected '$expected_application_identifier'" >&2
-      exit 1
-    fi
-    if [[ "$entitlement_team_id" != "$DEVELOPMENT_TEAM" ]]; then
-      echo "error: $actual_bundle_id has entitlement Team ID '$entitlement_team_id', expected '$DEVELOPMENT_TEAM'" >&2
-      exit 1
-    fi
-    if [[ "$app_group" != "group.com.zxacn" ]]; then
-      echo "error: $actual_bundle_id is missing the expected App Group entitlement" >&2
-      exit 1
-    fi
-    if [[ ! -f "$provisioning_profile" ]]; then
-      echo "error: $actual_bundle_id is missing an embedded Developer ID provisioning profile" >&2
-      exit 1
-    fi
-
-    profile_plist="$BUILD_DIR/provisioning-profile-$index.plist"
-    security cms -D -i "$provisioning_profile" >"$profile_plist"
-    provisioned_application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist" 2>/dev/null || true)"
-    provisioned_app_group="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$profile_plist" 2>/dev/null || true)"
-    if [[ "$provisioned_application_identifier" != "$expected_application_identifier" ]]; then
-      echo "error: $actual_bundle_id provisioning profile does not authorize $expected_application_identifier" >&2
-      exit 1
-    fi
-    if [[ "$provisioned_app_group" != "group.com.zxacn" ]]; then
-      echo "error: $actual_bundle_id provisioning profile does not authorize group.com.zxacn" >&2
-      exit 1
-    fi
-  fi
 done
-
-codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+/usr/bin/python3 "$IDENTITY_VERIFIER" verify "$APP_PATH" --team "$DEVELOPMENT_TEAM" --kind 'Developer ID Application'
+if [[ -n "$PREVIOUS_APP" ]]; then
+  /usr/bin/python3 "$IDENTITY_VERIFIER" compare "$PREVIOUS_APP" "$APP_PATH"
+fi
+if [[ -n "${CLICKMATE_IDENTITY_COMPARISON_APP:-}" ]]; then
+  /usr/bin/python3 "$IDENTITY_VERIFIER" compare "$CLICKMATE_IDENTITY_COMPARISON_APP" "$APP_PATH" --require-code-change
+fi
 
 echo "==> Preparing DMG"
 ditto "$APP_PATH" "$PACKAGED_APP"
+/usr/bin/python3 "$IDENTITY_VERIFIER" verify "$PACKAGED_APP" --team "$DEVELOPMENT_TEAM" --kind 'Developer ID Application'
 ln -s /Applications "$DMG_ROOT/Applications"
 
 DMG_PATH="$OUTPUT_DIR/ClickMate-$APP_VERSION-universal-signed.dmg"

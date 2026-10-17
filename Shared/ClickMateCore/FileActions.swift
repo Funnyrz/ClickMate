@@ -76,6 +76,7 @@ extension FileActions {
         let sourceURL: URL
         let destinationURL: URL?
         let errorDescription: String?
+        var accessFailure: FileAccessFailure? = nil
         var succeeded: Bool { errorDescription == nil && destinationURL != nil }
     }
 
@@ -111,12 +112,12 @@ extension FileActions {
         let entries: [String: Entry]
     }
 
-    private enum BatchError: LocalizedError {
+    private enum BatchError: LocalizedError, CustomNSError {
         case changedSinceMove
         case originalPathOccupied
         case sourceChangedDuringCopy
-        case copiedButSourceRemains(URL, String)
-        case movedButRestoreUnavailable(URL, String)
+        case copiedButSourceRemains(URL, NSError)
+        case movedButRestoreUnavailable(URL, NSError)
         case failed(String)
 
         var errorDescription: String? {
@@ -124,10 +125,20 @@ extension FileActions {
             case .changedSinceMove: L10n.string("batch.changedSinceMove")
             case .originalPathOccupied: L10n.string("batch.originalPathOccupied")
             case .sourceChangedDuringCopy: L10n.string("batch.sourceChangedDuringCopy")
-            case let .copiedButSourceRemains(url, message): L10n.string("batch.copiedButSourceRemains", url.path, message)
-            case let .movedButRestoreUnavailable(url, message): L10n.string("batch.movedButRestoreUnavailable", url.path, message)
+            case let .copiedButSourceRemains(url, error): L10n.string("batch.copiedButSourceRemains", url.path, error.localizedDescription)
+            case let .movedButRestoreUnavailable(url, error): L10n.string("batch.movedButRestoreUnavailable", url.path, error.localizedDescription)
             case let .failed(message): message
             }
+        }
+
+        var errorUserInfo: [String: Any] {
+            var info: [String: Any] = [NSLocalizedDescriptionKey: errorDescription ?? ""]
+            switch self {
+            case let .copiedButSourceRemains(_, error), let .movedButRestoreUnavailable(_, error):
+                info[NSUnderlyingErrorKey] = error
+            default: break
+            }
+            return info
         }
     }
 
@@ -184,7 +195,7 @@ extension FileActions {
                 try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
             }
         } catch {
-            let items = urls.map { ItemResult(sourceURL: $0, destinationURL: nil, errorDescription: error.localizedDescription) }
+            let items = urls.map { ItemResult(sourceURL: $0, destinationURL: nil, errorDescription: error.localizedDescription, accessFailure: FileAccessFailure(error)) }
             items.forEach(didProcess)
             return BatchResult(items: items)
         }
@@ -197,7 +208,7 @@ extension FileActions {
             do {
                 receipts.append(MoveReceipt.Entry(sourceURL: source, destinationURL: destination, fingerprint: try fingerprint(of: destination)))
             } catch {
-                throw BatchError.movedButRestoreUnavailable(destination, error.localizedDescription)
+                throw BatchError.movedButRestoreUnavailable(destination, error as NSError)
             }
             return destination
         }
@@ -242,7 +253,8 @@ extension FileActions {
     /// The injectable rename is a bounded seam for testing EXDEV without a second volume.
     static func moveItemExclusively(
         from source: URL, to destination: URL,
-        rename: (URL, URL) throws -> Void = { try exclusiveRename(from: $0, to: $1) }
+        rename: (URL, URL) throws -> Void = { try exclusiveRename(from: $0, to: $1) },
+        removeSource: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
     ) throws {
         do {
             try rename(source, destination)
@@ -260,11 +272,11 @@ extension FileActions {
         guard try fingerprint(of: source) == before else { throw BatchError.sourceChangedDuringCopy }
         try rename(stagedItem, destination)
         do {
-            try FileManager.default.removeItem(at: source)
+            try removeSource(source)
         } catch {
             // Keep the complete published copy if source removal fails, including partial
             // directory removal. Deleting it here could destroy the only remaining data.
-            throw BatchError.copiedButSourceRemains(destination, error.localizedDescription)
+            throw BatchError.copiedButSourceRemains(destination, error as NSError)
         }
     }
 
@@ -296,7 +308,7 @@ extension FileActions {
             default: break
             }
         }
-        return ItemResult(sourceURL: sourceURL, destinationURL: destination, errorDescription: error.localizedDescription)
+        return ItemResult(sourceURL: sourceURL, destinationURL: destination, errorDescription: error.localizedDescription, accessFailure: FileAccessFailure(error))
     }
 
     private static func withAvailableDestination(

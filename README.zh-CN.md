@@ -17,6 +17,14 @@ ClickMate（右键大师）将常用文件工具带入 Finder：从模板新建�
 3. 使用 Finder 工具时，在系统设置中启用 ClickMate Finder 扩展，并授权需要使用的文件夹。然后在桌面、文稿、下载等已监控文件夹内右键点击文件或空白区域。
 4. 在**快捷功能**页启用需要的快捷键，完成对应权限设置后再试用。
 
+**未签名版本安装说明：** 将应用复制到 `/Applications` 后，打开“终端”执行以下命令，再打开 ClickMate：
+
+```sh
+xattr -dr com.apple.quarantine /Applications/ClickMate.app
+```
+
+该命令用于移除下载应用的隔离属性；文件夹访问及其他系统权限仍需分别授权。
+
 | 功能 | 所需条件 |
 |---|---|
 | Finder 工具 | 启用 Finder 扩展并具有目标文件夹访问权限。访问失败时，可使用文件夹授权与磁盘访问诊断。 |
@@ -183,6 +191,8 @@ xcodebuild analyze -project ClickMate.xcodeproj -scheme ClickMate -destination '
 
 完整签名构建需要为主应用、Helper 与 Finder 扩展使用同一开发团队，并配置 App Group 能力。安装后在系统设置中启用 Finder 扩展。
 
+首次安装时，默认目录的右键菜单注册不依赖完全磁盘访问。文件夹授权决定实际文件访问。明确选择的自定义目录可在无 App Group 时通过本机备用通道同步，其他 Finder 配置仍需要 App Group；权限页会分别显示这些状态。进程重新启动只表示已刷新，不代表系统已授予权限；最近操作结果只适用于显示的目录。
+
 中英文文档配图的生成方法见[截图生成说明](Scripts/README-screenshots.md)。
 
 </details>
@@ -204,19 +214,34 @@ Scripts/package_signed_dmg.sh
 **本地权限与 Finder 验收：** 使用稳定的 Apple Development 团队。此包用于本地测试，不用于公开分发。
 
 ```sh
-export CLICKMATE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
-# 可选：存在多张显示名称相同的证书时指定证书 SHA：
-export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
+# 仅有一张有效 Apple Development 证书时自动选择并读取证书真实 Team ID。
+# 多张证书时指定：export CLICKMATE_DEVELOPMENT_IDENTITY='CERTIFICATE_SHA'
 Scripts/package_development_dmg.sh
+Scripts/install_development.sh build/development/DerivedData/Build/Products/Release/ClickMate.app --dry-run
+Scripts/install_development.sh
 ```
 
-**未签名诊断：** 不需要开发团队。
+默认只使用已有描述文件。主应用及扩展必须分别具有显式 App ID，并通过有效描述文件授权 `group.com.zxacn`；通配符描述文件不足以支持共享配置。需要 Xcode 创建或下载描述文件时，使用 `CLICKMATE_ALLOW_PROVISIONING_UPDATES=1 Scripts/package_development_dmg.sh`。缺少证书、团队能力或描述文件会明确失败，不会退回临时签名。
+
+安装器要求先退出主应用、停止后台服务并禁用 Finder 扩展，避免旧进程继续使用旧代码。它会保留旧应用用于恢复，不修改 TCC。首次从临时签名迁移后，可能需要在系统设置中删除旧授权条目并重新添加安装后的应用或后台服务。开发签名与 Developer ID 发行签名应保持独立，不能假设授权自动继承。
+
+验证两份代码不同的完整签名构建是否保持身份兼容：
+
+```sh
+python3 Scripts/verify_signing_identity.py compare /path/to/previous/ClickMate.app /path/to/candidate/ClickMate.app --require-code-change
+```
+
+打包时可用 `CLICKMATE_PREVIOUS_APP` 指定上一份完整签名应用，自动验证三个组件的身份连续性。新电脑验收仍需在无历史配置和 TCC 授权的 macOS 用户或虚拟机中实测，不能用本机单元测试替代。
+
+**未签名安装包：** 不需要开发团队。
 
 ```sh
 Scripts/package_unsigned_dmg.sh
 ```
 
-未签名包移除 App Group entitlement。安全目录中的默认 Finder 操作可使用 URL 降级路径，但自定义 Finder 配置同步、共享运行状态和自动权限验证不可用。快捷功能服务仅在当前登录会话中启动，重新构建后的临时签名可能需要重新授权。请使用签名版本验证权限身份稳定性及完整共享队列路径。
+未签名包移除 App Group entitlement。默认 Finder 操作使用 URL 路径；明确选择的监控目录通过本地会话通道同步，并由扩展缓存，访问书签保留在主应用。下载等默认目录若重定向到外置盘，请在权限页选择实际目标子目录。其他 Finder 配置同步、共享运行状态和自动权限验证仍不可用。快捷功能服务仅在当前登录会话中启动，重新构建后的临时签名可能需要重新授权。请使用签名版本验证权限身份稳定性及完整共享队列路径。
+
+未签名 DMG 内包含 `ClickMate.app` 和 `Applications` 快捷方式。将应用拖入应用程序目录后，再打开安装后的副本；应用名称和安装步骤与其他安装包一致，不使用开发者证书或公证。替换版本后可能需要重新授权，请避免同时运行不同副本。
 
 </details>
 

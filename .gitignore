@@ -39,3 +39,7 @@ Carthage/Build/
 .omx/
 Scripts/release_github.sh
 .idea/
+
+# Python script caches
+__pycache__/
+*.py[cod]
