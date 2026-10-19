@@ -105,7 +105,12 @@ final class FileTaskCenter: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     func cancelAndWait(completion: @escaping () -> Void) {
-        items.filter { $0.state == .running }.forEach { $0.cancellation.cancel() }
+        let runningItems = items.filter { $0.state == .running }
+        guard !runningItems.isEmpty else {
+            completion()
+            return
+        }
+        runningItems.forEach { $0.cancellation.cancel() }
         Task {
             while items.contains(where: { $0.state == .running }) {
                 try? await Task.sleep(for: .milliseconds(50))

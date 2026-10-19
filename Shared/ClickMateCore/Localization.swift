@@ -43,6 +43,7 @@ enum L10n {
     }
 
     private static let english: [String: String] = [
+        "app.quit": "Quit ClickMate",
         "guide.trialFilesRetained": "Files you added or changed were preserved at %@.",
         "settingsData.applicationCount": "Pinned applications",
         "settingsData.cancel": "Cancel",
@@ -375,6 +376,7 @@ enum L10n {
         "screenshot.longCapturing": "Scroll downward · %d frames · %d px",
         "screenshot.longPaused": "Capture paused · %d frames · %d px",
         "screenshot.longNoOverlap": "Scroll distance was too large. Scroll up slightly, then continue.",
+        "screenshot.longTargetChanged": "The capture paused because the active app changed. Return to the captured app, then continue.",
         "screenshot.longLimitReached": "The scrolling capture reached its size or time limit.",
         "screenshot.edit": "Edit",
         "screenshot.save": "Save As",
@@ -506,6 +508,7 @@ enum L10n {
     ]
 
     private static let simplifiedChinese: [String: String] = [
+        "app.quit": "退出 ClickMate",
         "guide.trialFilesRetained": "您添加或修改的文件已保留在 %@。",
         "settingsData.applicationCount": "置顶应用",
         "settingsData.cancel": "取消",
@@ -838,6 +841,7 @@ enum L10n {
         "screenshot.longCapturing": "向下滚动 · %d 帧 · %d 像素",
         "screenshot.longPaused": "已暂停 · %d 帧 · %d 像素",
         "screenshot.longNoOverlap": "滚动幅度过大，请向上回滚一点后继续。",
+        "screenshot.longTargetChanged": "前台应用已改变，长截图已暂停。请返回原应用后继续。",
         "screenshot.longLimitReached": "长截图已达到尺寸或时间上限。",
         "screenshot.edit": "编辑",
         "screenshot.save": "另存为",

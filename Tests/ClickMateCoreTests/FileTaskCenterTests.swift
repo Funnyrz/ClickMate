@@ -3,6 +3,25 @@ import XCTest
 
 @MainActor
 final class FileTaskCenterTests: XCTestCase {
+    func testIdleCancellationCompletesSynchronously() {
+        let center = FileTaskCenter(presentsWindows: false)
+        var completed = false
+        center.cancelAndWait { completed = true }
+        XCTAssertTrue(completed)
+    }
+
+    func testQuitWaitsForRunningTaskToAcknowledgeCancellation() async throws {
+        let center = FileTaskCenter(presentsWindows: false)
+        let job = center.begin(title: "Quit regression")
+        var completed = false
+        center.cancelAndWait { completed = true }
+        XCTAssertTrue(job.cancellation.isCancelled)
+        XCTAssertFalse(completed)
+        center.update(job.id) { $0.state = .cancelled }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(completed)
+    }
+
     func testSuccessfulHashCopiesOnlyAfterFinishing() async throws {
         let source = try makeFile()
         var clipboard = "before"

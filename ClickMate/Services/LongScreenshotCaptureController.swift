@@ -6,6 +6,7 @@ enum LongScreenshotCaptureError: LocalizedError {
     case noOverlap
     case limitReached
     case captureFailed
+    case targetChanged
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,8 @@ enum LongScreenshotCaptureError: LocalizedError {
             return L10n.string("screenshot.longLimitReached")
         case .captureFailed:
             return L10n.string("screenshot.outputFailed")
+        case .targetChanged:
+            return L10n.string("screenshot.longTargetChanged")
         }
     }
 }
@@ -25,25 +28,28 @@ final class LongScreenshotCaptureController {
     private let selection: CGRect
     private let targetProcessIdentifier: pid_t?
     private let capture: @MainActor () async throws -> CGImage
+    private let showsOverlay: Bool
+    private let sleep: @MainActor (Duration) async throws -> Void
+    private let targetApplicationIsActiveProvider: (@MainActor () -> Bool)?
+    private let screenConfigurationIsValidProvider: (@MainActor () -> Bool)?
     private var onCompleted: ((CGImage, Bool) -> Void)?
     private var onCancelled: (() -> Void)?
     private var onError: ((Error) -> Void)?
 
-    private let assembler = LongScreenshotAssembler()
+    private let assembler: LongScreenshotAssembler
     private let hotKeys = LongScreenshotHotKeyMonitor()
     private var borderPanel: NSPanel?
     private var toolbarPanel: NSPanel?
     private weak var toolbarView: LongScreenshotToolbarView?
-    private var scrollMonitor: Any?
-    private var localScrollMonitor: Any?
     private var captureTask: Task<Void, Never>?
     private var timeoutTask: Task<Void, Never>?
-    private var duplicateCount = 0
     private var failureState = LongScreenshotFailureState()
     private var isReady = false
-    private var hasPendingScroll = false
     private var isPaused = false
     private var isFinished = false
+    private var isFinishing = false
+    private var sampleGeneration = 0
+    private var currentSample: LongScreenshotSampleValidity?
 
     init(
         screen: NSScreen,
@@ -52,51 +58,75 @@ final class LongScreenshotCaptureController {
         capture: @escaping @MainActor () async throws -> CGImage,
         onCompleted: @escaping (CGImage, Bool) -> Void,
         onCancelled: @escaping () -> Void,
-        onError: @escaping (Error) -> Void
+        onError: @escaping (Error) -> Void,
+        showsOverlay: Bool = true,
+        sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        targetApplicationIsActive: (@MainActor () -> Bool)? = nil,
+        screenConfigurationIsValid: (@MainActor () -> Bool)? = nil,
+        beforeAppend: (@Sendable () async -> Void)? = nil
     ) {
         self.screen = screen
         self.selection = selection
         self.targetProcessIdentifier = targetProcessIdentifier
         self.capture = capture
+        self.showsOverlay = showsOverlay
+        self.sleep = sleep
+        targetApplicationIsActiveProvider = targetApplicationIsActive
+        screenConfigurationIsValidProvider = screenConfigurationIsValid
+        assembler = LongScreenshotAssembler(beforeAppend: beforeAppend)
         self.onCompleted = onCompleted
         self.onCancelled = onCancelled
         self.onError = onError
     }
 
     func start() {
-        guard !isFinished else { return }
-        presentOverlay()
-        installControls()
+        guard !isFinished, captureTask == nil else { return }
+        if showsOverlay {
+            presentOverlay()
+            installControls()
+        }
         captureTask = Task { [weak self] in
             guard let self else { return }
             do {
+                guard screenConfigurationIsValid() else { throw LongScreenshotCaptureError.captureFailed }
+                guard targetApplicationIsActive() else { throw LongScreenshotCaptureError.targetChanged }
                 let firstFrame = try await capture()
                 try Task.checkCancellation()
+                guard screenConfigurationIsValid() else { throw LongScreenshotCaptureError.captureFailed }
+                guard targetApplicationIsActive() else { throw LongScreenshotCaptureError.targetChanged }
                 try await assembler.start(with: firstFrame)
+                try Task.checkCancellation()
+                guard !isFinished, !isFinishing else { return }
                 isReady = true
-                captureTask = nil
                 let metrics = await assembler.metrics
+                guard !isFinished, !isFinishing else { return }
                 updateToolbar(metrics: metrics)
-                if hasPendingScroll {
-                    hasPendingScroll = false
-                    scheduleCapture()
-                }
+                await runCaptureLoop()
             } catch is CancellationError {
                 return
             } catch {
                 fail(error)
             }
         }
-        timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(60))
+        timeoutTask = Task { [weak self, sleep] in
+            do {
+                try await sleep(.seconds(60))
+            } catch { return }
             guard !Task.isCancelled else { return }
-            await self?.finish(reachedLimit: true)
+            guard let self else { return }
+            if isReady {
+                await finish(reachedLimit: true)
+            } else {
+                fail(LongScreenshotCaptureError.captureFailed)
+            }
         }
     }
 
     func cancel() {
         guard !isFinished else { return }
         isFinished = true
+        sampleGeneration += 1
+        currentSample?.invalidate()
         failureState.reset()
         cleanup()
         let completion = onCancelled
@@ -105,18 +135,6 @@ final class LongScreenshotCaptureController {
     }
 
     private func installControls() {
-        let handleScroll: () -> Void = { [weak self] in
-            Task { @MainActor in
-                self?.scheduleCapture()
-            }
-        }
-        scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { _ in
-            handleScroll()
-        }
-        localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            handleScroll()
-            return event
-        }
         hotKeys.install(
             onReturn: { [weak self] in
                 Task { @MainActor in await self?.finish(reachedLimit: false) }
@@ -125,88 +143,92 @@ final class LongScreenshotCaptureController {
         )
     }
 
-    private func scheduleCapture(delay: Duration = .milliseconds(320)) {
-        guard !isFinished, !isPaused else { return }
-        guard isReady else {
-            hasPendingScroll = true
-            return
-        }
-        captureTask?.cancel()
-        captureTask = Task { [weak self] in
-            guard let self else { return }
+    private func runCaptureLoop() async {
+        while !Task.isCancelled, !isFinished, !isFinishing {
             do {
-                try await Task.sleep(for: delay)
+                try await sleep(.milliseconds(150))
                 try Task.checkCancellation()
+            } catch { return }
+            guard !isFinished, !isFinishing else { return }
+            guard !isPaused else { continue }
+            let generation = sampleGeneration
+            let sample = LongScreenshotSampleValidity()
+            currentSample = sample
+            do {
                 guard screenConfigurationIsValid() else {
                     pause(with: LongScreenshotCaptureError.captureFailed)
-                    return
+                    continue
                 }
                 guard targetApplicationIsActive() else {
-                    if failureState.recordCaptureFailure() {
-                        pause(with: LongScreenshotCaptureError.captureFailed)
-                    } else {
-                        scheduleCapture(delay: .milliseconds(250))
-                    }
-                    return
+                    pause(with: LongScreenshotCaptureError.targetChanged)
+                    continue
                 }
-                let firstSample = try await capture()
-                try await Task.sleep(for: .milliseconds(120))
-                let stableSample = try await capture()
+                // Each ScreenCaptureKit image is a complete compositor frame. Waiting for
+                // scrolling to stop would lose intermediate frames needed for overlap.
+                let frame = try await capture()
                 try Task.checkCancellation()
-                guard LongScreenshotFrameComparator.difference(firstSample, stableSample) < 3.2 else {
-                    scheduleCapture(delay: .milliseconds(180))
-                    return
+                guard sampleIsCurrent(generation) else { continue }
+                guard screenConfigurationIsValid() else {
+                    pause(with: LongScreenshotCaptureError.captureFailed)
+                    continue
                 }
-                let result = try await assembler.append(stableSample)
+                guard targetApplicationIsActive() else {
+                    pause(with: LongScreenshotCaptureError.targetChanged)
+                    continue
+                }
+                guard let result = try await assembler.append(frame, sample: sample) else { continue }
+                try Task.checkCancellation()
+                guard sampleIsCurrent(generation) else { continue }
                 let shouldPauseForOverlap = failureState.recordAppend(result)
-                switch result {
-                case .appended:
-                    duplicateCount = 0
-                case .duplicate:
-                    duplicateCount += 1
-                    if duplicateCount >= 3 {
-                        await finish(reachedLimit: false)
-                        return
-                    }
-                case .noOverlap:
-                    if shouldPauseForOverlap {
-                        pause(with: LongScreenshotCaptureError.noOverlap)
-                        return
-                    }
-                    scheduleCapture(delay: .milliseconds(240))
+                if shouldPauseForOverlap {
+                    pause(with: LongScreenshotCaptureError.noOverlap)
+                    continue
                 }
                 let metrics = await assembler.metrics
+                guard sampleIsCurrent(generation) else { continue }
                 updateToolbar(metrics: metrics)
                 if metrics.reachedLimit {
-                    await finish(reachedLimit: true)
+                    requestFinishAtLimit()
+                    return
                 }
             } catch is CancellationError {
                 return
             } catch let error as LongScreenshotStitcher.StitchingError {
+                guard sampleIsCurrent(generation) else { continue }
                 switch error {
                 case .pixelHeightLimitExceeded, .rawMemoryLimitExceeded:
-                    await finish(reachedLimit: true)
+                    requestFinishAtLimit()
+                    return
                 default:
                     pause(with: error)
                 }
             } catch {
+                guard sampleIsCurrent(generation) else { continue }
                 if failureState.recordCaptureFailure() {
                     pause(with: error)
-                } else {
-                    scheduleCapture(delay: .milliseconds(250))
                 }
             }
         }
     }
 
+    private func sampleIsCurrent(_ generation: Int) -> Bool {
+        !isFinished && !isFinishing && !isPaused && generation == sampleGeneration
+    }
+
+    private func requestFinishAtLimit() {
+        // Finish drains captureTask; dispatch it outside that task to avoid self-await.
+        Task { [weak self] in await self?.finish(reachedLimit: true) }
+    }
+
     private func pause(with error: Error?) {
-        guard !isFinished else { return }
+        guard !isFinished, !isFinishing else { return }
         isPaused = true
-        captureTask?.cancel()
-        captureTask = nil
+        sampleGeneration += 1
+        currentSample?.invalidate()
         Task { [weak self] in
             guard let self else { return }
             let metrics = await assembler.metrics
+            guard !isFinished, !isFinishing else { return }
             updateToolbar(metrics: metrics)
         }
         if let error {
@@ -214,32 +236,46 @@ final class LongScreenshotCaptureController {
         }
     }
 
-    private func togglePause() {
-        guard !isFinished else { return }
+    func togglePause() {
+        guard !isFinished, !isFinishing else { return }
         isPaused.toggle()
+        sampleGeneration += 1
+        currentSample?.invalidate()
         if !isPaused {
-            duplicateCount = 0
             failureState.reset()
-            scheduleCapture(delay: .milliseconds(180))
         }
         Task { [weak self] in
             guard let self else { return }
             let metrics = await assembler.metrics
+            guard !isFinished, !isFinishing else { return }
             updateToolbar(metrics: metrics)
         }
     }
 
-    private func finish(reachedLimit: Bool) async {
-        guard !isFinished, isReady else { return }
-        isFinished = true
+    func finish(reachedLimit: Bool) async {
+        guard !isFinished, !isFinishing else { return }
+        guard isReady else {
+            if reachedLimit { fail(LongScreenshotCaptureError.captureFailed) }
+            return
+        }
+        isFinishing = true
+        sampleGeneration += 1
+        currentSample?.invalidate()
         captureTask?.cancel()
+        // The actor serializes image assembly after admitted synchronous appends.
+        // Invalidated samples cannot append later; a stalled screen-capture
+        // callback must not prevent exporting the content already committed.
         do {
             let image = try await assembler.makeImage()
+            guard !isFinished else { return }
+            isFinished = true
             cleanup()
             let completion = onCompleted
             clearCallbacks()
             completion?(image, reachedLimit)
         } catch {
+            guard !isFinished else { return }
+            isFinished = true
             cleanup()
             let errorHandler = onError
             let cancelHandler = onCancelled
@@ -250,7 +286,7 @@ final class LongScreenshotCaptureController {
     }
 
     private func fail(_ error: Error) {
-        guard !isFinished else { return }
+        guard !isFinished, !isFinishing else { return }
         isFinished = true
         cleanup()
         let errorHandler = onError
@@ -261,12 +297,14 @@ final class LongScreenshotCaptureController {
     }
 
     private func targetApplicationIsActive() -> Bool {
-        guard let targetProcessIdentifier else { return true }
+        if let targetApplicationIsActiveProvider { return targetApplicationIsActiveProvider() }
+        guard let targetProcessIdentifier else { return false }
         return NSWorkspace.shared.frontmostApplication?.processIdentifier == targetProcessIdentifier
     }
 
     private func screenConfigurationIsValid() -> Bool {
-        NSScreen.screens.contains { candidate in
+        if let screenConfigurationIsValidProvider { return screenConfigurationIsValidProvider() }
+        return NSScreen.screens.contains { candidate in
             candidate.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
                 == screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
                 && candidate.frame.size == screen.frame.size
@@ -341,14 +379,6 @@ final class LongScreenshotCaptureController {
         captureTask = nil
         timeoutTask?.cancel()
         timeoutTask = nil
-        if let scrollMonitor {
-            NSEvent.removeMonitor(scrollMonitor)
-            self.scrollMonitor = nil
-        }
-        if let localScrollMonitor {
-            NSEvent.removeMonitor(localScrollMonitor)
-            self.localScrollMonitor = nil
-        }
         hotKeys.invalidate()
         borderPanel?.orderOut(nil)
         borderPanel?.close()
@@ -365,8 +395,24 @@ final class LongScreenshotCaptureController {
     }
 }
 
+private final class LongScreenshotSampleValidity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var valid = true
+
+    func invalidate() {
+        lock.withLock { valid = false }
+    }
+
+    var isValid: Bool { lock.withLock { valid } }
+}
+
 private actor LongScreenshotAssembler {
     private var stitcher: LongScreenshotStitcher?
+    private let beforeAppend: (@Sendable () async -> Void)?
+
+    init(beforeAppend: (@Sendable () async -> Void)?) {
+        self.beforeAppend = beforeAppend
+    }
 
     var metrics: LongScreenshotMetrics {
         guard let stitcher else { return LongScreenshotMetrics(frameCount: 0, pixelHeight: 0, reachedLimit: false) }
@@ -379,10 +425,16 @@ private actor LongScreenshotAssembler {
     }
 
     func start(with image: CGImage) throws {
+        try Task.checkCancellation()
         stitcher = try LongScreenshotStitcher(firstFrame: image)
     }
 
-    func append(_ image: CGImage) throws -> LongScreenshotAppendResult {
+    func append(_ image: CGImage, sample: LongScreenshotSampleValidity) async throws -> LongScreenshotAppendResult? {
+        await beforeAppend?()
+        try Task.checkCancellation()
+        // Admission is the commit boundary. A pause invalidates queued samples;
+        // synchronous stitching already admitted here is allowed to finish.
+        guard sample.isValid else { return nil }
         guard let stitcher else { throw LongScreenshotCaptureError.captureFailed }
         return try stitcher.append(image)
     }
@@ -397,36 +449,6 @@ private struct LongScreenshotMetrics {
     let frameCount: Int
     let pixelHeight: Int
     let reachedLimit: Bool
-}
-
-private enum LongScreenshotFrameComparator {
-    static func difference(_ first: CGImage, _ second: CGImage) -> Double {
-        guard let firstSamples = samples(first), let secondSamples = samples(second),
-              firstSamples.count == secondSamples.count
-        else { return .greatestFiniteMagnitude }
-        let total = zip(firstSamples, secondSamples).reduce(0.0) { result, pair in
-            result + abs(Double(pair.0) - Double(pair.1))
-        }
-        return total / Double(max(firstSamples.count, 1))
-    }
-
-    private static func samples(_ image: CGImage) -> [UInt8]? {
-        let width = 32
-        let height = 32
-        var bytes = [UInt8](repeating: 0, count: width * height)
-        guard let context = CGContext(
-            data: &bytes,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
-        context.interpolationQuality = .low
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return bytes
-    }
 }
 
 private final class LongScreenshotBorderView: NSView {

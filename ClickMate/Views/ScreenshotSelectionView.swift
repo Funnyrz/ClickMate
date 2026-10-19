@@ -23,6 +23,7 @@ final class ScreenshotSelectionController {
     private var panel: ScreenshotSelectionPanel?
     private weak var selectionView: ScreenshotSelectionView?
     private var longScreenshotController: LongScreenshotCaptureController?
+    private var longScreenshotStartTask: Task<Void, Never>?
     private var isFinishing = false
 
     init(
@@ -127,12 +128,41 @@ final class ScreenshotSelectionController {
     }
 
     private func startLongScreenshot(selection: CGRect) {
-        guard !isFinishing, longScreenshotController == nil, let panel else { return }
+        guard !isFinishing, longScreenshotController == nil, longScreenshotStartTask == nil,
+              let panel else { return }
         panel.orderOut(nil)
+        guard let target = ScreenshotTargetApplication.restore(
+            processIdentifier: targetProcessIdentifier, screen: screen, selection: selection
+        ) else {
+            panel.orderFrontRegardless()
+            panel.makeKey()
+            onError?(LongScreenshotCaptureError.targetChanged)
+            return
+        }
+        longScreenshotStartTask = Task { [weak self] in
+            do {
+                try await ScreenshotTargetApplication.waitUntilActive(processIdentifier: target)
+                try Task.checkCancellation()
+                guard let self, !isFinishing else { return }
+                longScreenshotStartTask = nil
+                beginLongScreenshot(selection: selection, target: target)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self, !isFinishing else { return }
+                longScreenshotStartTask = nil
+                panel.orderFrontRegardless()
+                panel.makeKey()
+                onError?(error)
+            }
+        }
+    }
+
+    private func beginLongScreenshot(selection: CGRect, target: pid_t) {
         let controller = LongScreenshotCaptureController(
             screen: screen,
             selection: selection,
-            targetProcessIdentifier: targetProcessIdentifier,
+            targetProcessIdentifier: target,
             capture: { [captureRegion, screen] in
                 try await captureRegion(screen, selection)
             },
@@ -182,6 +212,8 @@ final class ScreenshotSelectionController {
     }
 
     private func closePanel() {
+        longScreenshotStartTask?.cancel()
+        longScreenshotStartTask = nil
         longScreenshotController?.cancel()
         longScreenshotController = nil
         NSCursor.arrow.set()

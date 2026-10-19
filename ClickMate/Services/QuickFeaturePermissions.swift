@@ -253,7 +253,9 @@ enum QuickFeaturePermissions {
         do {
             try process.run()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                NSApp.terminate(nil)
+                RunLoop.main.perform(inModes: [.default]) {
+                    MainActor.assumeIsolated { NSApp.terminate(nil) }
+                }
             }
             return true
         } catch {

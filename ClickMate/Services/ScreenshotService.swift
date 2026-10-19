@@ -2,6 +2,71 @@ import AppKit
 import Combine
 import CoreGraphics
 import ScreenCaptureKit
+import OSLog
+
+enum ScreenshotTargetApplication {
+    static func contentProcessIdentifier(
+        processIdentifier: pid_t,
+        bundleIdentifier: String?,
+        currentProcessIdentifier: pid_t = ProcessInfo.processInfo.processIdentifier
+    ) -> pid_t? {
+        guard processIdentifier != currentProcessIdentifier,
+              bundleIdentifier != AppConstants.bundleIdentifier,
+              bundleIdentifier != "com.zxacn.clickmate.Helper" else { return nil }
+        return processIdentifier
+    }
+
+    @MainActor
+    static func frontmostProcessIdentifier() -> pid_t? {
+        guard let application = NSWorkspace.shared.frontmostApplication else { return nil }
+        return contentProcessIdentifier(processIdentifier: application.processIdentifier,
+                                        bundleIdentifier: application.bundleIdentifier)
+    }
+
+    @MainActor
+    static func restore(processIdentifier: pid_t?, screen: NSScreen, selection: CGRect) -> pid_t? {
+        var application = processIdentifier.flatMap { NSRunningApplication(processIdentifier: $0) }
+        if application == nil {
+            // Window-list bounds use the top-left of the primary display, while
+            // the selected rectangle is local to an AppKit screen's bottom-left.
+            let primaryTop = NSScreen.screens.first?.frame.maxY ?? screen.frame.maxY
+            let point = CGPoint(x: screen.frame.minX + selection.midX,
+                                y: primaryTop - screen.frame.minY - selection.midY)
+            let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                     kCGNullWindowID) as? [[String: Any]] ?? []
+            for window in windows {
+                guard (window[kCGWindowLayer as String] as? Int) == 0,
+                      let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                      let rectangle = CGRect(dictionaryRepresentation: bounds as CFDictionary), rectangle.contains(point),
+                      let pid = window[kCGWindowOwnerPID as String] as? pid_t,
+                      let candidate = NSRunningApplication(processIdentifier: pid),
+                      contentProcessIdentifier(processIdentifier: pid,
+                                               bundleIdentifier: candidate.bundleIdentifier) != nil else { continue }
+                application = candidate
+                break
+            }
+        }
+        guard let application, !application.isTerminated else { return nil }
+        guard application.activate(options: []) else { return nil }
+        return application.processIdentifier
+    }
+
+    @MainActor
+    static func waitUntilActive(
+        processIdentifier: pid_t,
+        activeProcessIdentifier: @MainActor () -> pid_t? = {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
+        },
+        sleep: @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(50)) }
+    ) async throws {
+        for _ in 0..<20 {
+            try Task.checkCancellation()
+            if activeProcessIdentifier() == processIdentifier { return }
+            try await sleep()
+        }
+        throw LongScreenshotCaptureError.targetChanged
+    }
+}
 
 enum ScreenshotCaptureMode {
     case region
@@ -256,6 +321,7 @@ private extension NSScreen {
 
 @MainActor
 final class ScreenshotCoordinator: NSObject, ObservableObject {
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "Screenshot")
     enum State: Equatable {
         case idle
         case selecting
@@ -325,7 +391,8 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
 
         captureGeneration += 1
         let generation = captureGeneration
-        let targetProcessIdentifier = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let targetProcessIdentifier = ScreenshotTargetApplication.frontmostProcessIdentifier()
+        logger.info("Screenshot capture started generation=\(generation)")
         lastErrorMessage = nil
         guard let screen = service.screenUnderMouse() else {
             report(ScreenshotError.displayUnavailable)
@@ -406,6 +473,7 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
                 )
                 selectionController = controller
                 controller.present()
+                logger.info("Screenshot selection presented generation=\(generation)")
             } catch is CancellationError {
                 guard generation == captureGeneration else { return }
                 captureTask = nil
@@ -453,6 +521,7 @@ final class ScreenshotCoordinator: NSObject, ObservableObject {
     }
 
     private func report(_ error: Error, resetState: Bool = true) {
+        logger.error("Screenshot operation failed: \(String(describing: type(of: error)), privacy: .public)")
         let message = (error as? LocalizedError)?.errorDescription
             ?? L10n.string("screenshot.outputFailed")
         report(message: message, resetState: resetState)

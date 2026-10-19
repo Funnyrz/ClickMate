@@ -23,12 +23,21 @@ struct ClickMateApp: App {
         }
         .windowStyle(.titleBar)
         .windowResizability(.contentSize)
+        .commands {
+            CommandGroup(replacing: .appTermination) {
+                Button(L10n.string("app.quit")) {
+                    AppTerminationCoordinator.terminateFromEventLoop()
+                }
+                .keyboardShortcut("q")
+            }
+        }
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let quickFeatureHelperService = QuickFeatureHelperService.shared
+    private let terminationCoordinator = AppTerminationCoordinator()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Every launch begins hidden. A user-originated open event promotes the app later.
@@ -48,18 +57,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        DispatchQueue.main.async {
+        terminationCoordinator.requestTermination(prepare: { completion in
             ArchiveEditorWindowController.shared.requestTermination { shouldTerminate in
                 if shouldTerminate {
-                    FileTaskCenter.shared.cancelAndWait {
-                        sender.reply(toApplicationShouldTerminate: true)
-                    }
+                    FileTaskCenter.shared.cancelAndWait { completion(true) }
                 } else {
-                    sender.reply(toApplicationShouldTerminate: false)
+                    completion(false)
                 }
             }
-        }
-        return .terminateLater
+        }, reply: { allowed in
+            sender.reply(toApplicationShouldTerminate: allowed)
+        })
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

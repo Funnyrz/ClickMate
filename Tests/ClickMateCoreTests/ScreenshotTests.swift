@@ -5,6 +5,48 @@ import XCTest
 
 final class ScreenshotTests: XCTestCase {
     @MainActor
+    func testLongScreenshotWaitsForTargetActivationBeforeFirstCapture() async throws {
+        var activePID: pid_t? = 456
+        var waits = 0
+        try await ScreenshotTargetApplication.waitUntilActive(processIdentifier: 123,
+            activeProcessIdentifier: { activePID }, sleep: {
+                waits += 1
+                activePID = 123
+            })
+        XCTAssertEqual(waits, 1)
+    }
+
+    @MainActor
+    func testLongScreenshotTargetActivationTimesOutInsteadOfDisablingProtection() async {
+        var waits = 0
+        do {
+            try await ScreenshotTargetApplication.waitUntilActive(processIdentifier: 123,
+                activeProcessIdentifier: { nil }, sleep: { waits += 1 })
+            XCTFail("Expected target activation failure")
+        } catch {
+            guard case LongScreenshotCaptureError.targetChanged = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertEqual(waits, 20)
+    }
+
+    func testScreenshotTargetRejectsClickMateAndItsHelper() {
+        XCTAssertNil(ScreenshotTargetApplication.contentProcessIdentifier(
+            processIdentifier: 123, bundleIdentifier: AppConstants.bundleIdentifier, currentProcessIdentifier: 456
+        ))
+        XCTAssertNil(ScreenshotTargetApplication.contentProcessIdentifier(
+            processIdentifier: 123, bundleIdentifier: "com.zxacn.clickmate.Helper", currentProcessIdentifier: 456
+        ))
+        XCTAssertNil(ScreenshotTargetApplication.contentProcessIdentifier(
+            processIdentifier: 456, bundleIdentifier: nil, currentProcessIdentifier: 456
+        ))
+        XCTAssertEqual(ScreenshotTargetApplication.contentProcessIdentifier(
+            processIdentifier: 123, bundleIdentifier: "com.apple.Safari", currentProcessIdentifier: 456
+        ), 123)
+    }
+
+    @MainActor
     func testScreenshotAccessCheckUsesPreflightProviderWithoutRequestingPermission() {
         var readCount = 0
         let service = ScreenshotService(captureAccessProvider: {

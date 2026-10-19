@@ -1,8 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 
 @MainActor
 final class QuickFeatureCoordinator {
+    private let logger = Logger(subsystem: AppConstants.bundleIdentifier, category: "ScreenshotShortcut")
     private let hotKeyRegistrar = GlobalHotKeyRegistrar()
     private let finderCutController = FinderCutController()
     private var activationObserver: NSObjectProtocol?
@@ -181,6 +183,7 @@ final class QuickFeatureCoordinator {
     }
 
     private func captureScreenshot() {
+        logger.info("Screenshot shortcut received")
         if ScreenshotCoordinator.shared.state == .previewing {
             ScreenshotCoordinator.shared.bringPreviewToFront()
             return
@@ -190,6 +193,7 @@ final class QuickFeatureCoordinator {
             return
         }
         guard QuickFeaturePermissions.hasScreenRecordingAccess else {
+            logger.error("Screenshot shortcut blocked by screen recording permission")
             QuickFeaturePermissions.requestScreenRecordingAccess()
             HUDPresenter.shared.show(message: L10n.string("quickFeatures.screenshotPermissionRequired"))
             return
